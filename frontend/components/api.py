@@ -61,7 +61,6 @@ def register(user_id: str, full_name: str, email: str, phone: str = None,
              date_of_birth: str = None, blood_group: str = None):
     """Register new user."""
     payload = {
-        "user_id": user_id,
         "full_name": full_name,
         "email": email,
         "phone": phone,

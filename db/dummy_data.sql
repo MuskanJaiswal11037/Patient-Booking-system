@@ -505,9 +505,18 @@ VALUES
 INSERT INTO appointments (patient_id, doctor_id, appointment_at, duration_minutes, status, reason, notes)
 VALUES ('f8d78b23-a5aa-4765-9dac-16410f0718cb', '610a79b0-56f1-4f87-8008-ed064c054f74', '2026-03-25T15:00:00', 30, 'scheduled', 'Consultation', '')
 
-select * from users where email='jaiswalmuskan2603@gmail.com';
+select * from users where role='doctor';
 
 INSERT INTO appointments (patient_id, doctor_id, appointment_at, duration_minutes, status, reason, notes)
 VALUES ('f8d78b23-a5aa-4765-9dac-16410f0718cb', '610a79b0-56f1-4f87-8008-ed064c054f74', '2026-03-25T16:00:00', 30, 'scheduled', 'Consultation', '')
 
 select * from appointments;
+
+
+
+SELECT id FROM doctors WHERE user_email = (SELECT email FROM users WHERE full_name = 'Dr. Sneha Sharma');
+
+select * from doctors;
+select * from patients;
+
+select * from feedback;

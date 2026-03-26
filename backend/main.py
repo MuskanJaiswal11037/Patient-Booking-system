@@ -58,7 +58,6 @@ async def register(body: RegisterRequest, db: Session = Depends(get_db)):
         raise HTTPException(400, "Email already registered")
 
     user = User(
-        id=body.user_id,
         email=body.email,
         full_name=body.full_name,
         role="patient",  # Default role for registration
@@ -114,7 +113,7 @@ async def check_or_insert_user(
     db: Session = Depends(get_db),
 ):
     """
-    Check if a user exists in the database by user_id.
+    Check if a user exists in the database by user_email.
     If not, insert the user with the role of 'patient'.
     """
     result = db.execute(select(User).where(User.email == body.email))
@@ -149,8 +148,9 @@ async def chat(
         raise HTTPException(400, "Patient profile not found")
     
     
-    role = db.execute(select(User.role).where(User.email == user.email)).scalar_one_or_none()
-    role = role if role else "patient"
+    role = db.execute(select(User.role).where(User.email == user.email))
+    role = role.scalar_one_or_none()
+    role =  role[0]["role"] if role else "patient" 
     response = llm_service.chat_with_deep_agent(body.message, user_email=user.email, role=role)
     print(response)
 

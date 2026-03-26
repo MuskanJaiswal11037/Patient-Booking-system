@@ -12,8 +12,7 @@ def new_uuid():
 
 class User(Base):
     __tablename__ = "users"
-    id            = Column(String(255), primary_key=True)
-    email         = Column(String(255), unique=True, nullable=False)
+    email         = Column(String(255), primary_key=True, unique=True, nullable=False)
     full_name     = Column(String(255), nullable=False)
     role          = Column(String(20), nullable=False)
     phone         = Column(String(20))

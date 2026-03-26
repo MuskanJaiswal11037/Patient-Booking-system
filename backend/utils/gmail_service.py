@@ -12,9 +12,11 @@ import ssl
 from datetime import datetime, timedelta
 import uuid
 
+from numpy import select
 
-def send_calendar_invite(sender_email, sender_password, recipient_email, recipient_name, 
-                        event_title, event_description, start_time,location=""):
+
+def send_calendar_invite(app_id, sender_email, sender_password, recipient_email, recipient_name, 
+                        event_title, event_description, start_time,location="", method="REQUEST", db_handler=None, sequence=0):
     """
     Send a calendar invite (iCalendar format) to a recipient
     
@@ -49,12 +51,39 @@ def send_calendar_invite(sender_email, sender_password, recipient_email, recipie
 
         event_uid = str(uuid.uuid4())
 
+        if method == "CANCEL":
+            status = "CANCELLED"
+        else:
+            status = "CONFIRMED"
+
+        if db_handler:
+            query = "SELECT id FROM appointments WHERE id = %s"
+            result = db_handler.execute_query(query, (app_id,))
+            if not result:
+
+                # Store event UID in database for future reference (e.g., updates/cancellations)
+                insert_query = """
+                    INSERT INTO calender_events (appointment_id, event_uid, sequence)
+                    VALUES (%s, %s, %s)
+                """
+                db_handler.execute_query(insert_query, (app_id, event_uid, sequence))  # appointment_id can be updated later
+            else:
+                if method == "UPDATE":
+                    # For updates, increment sequence number
+                    update_query = """
+                        UPDATE calender_events 
+                        SET sequence = sequence + 1 
+                        WHERE appointment_id = %s
+                    """
+                    db_handler.execute_query(update_query, (app_id,))
+
+
         # ✅ Proper ICS format
         ics_content = f"""BEGIN:VCALENDAR\r\n
 VERSION:2.0\r\n
 PRODID:-//HospitalApp//Appointment System//EN\r\n
 CALSCALE:GREGORIAN\r\n
-METHOD:REQUEST\r\n
+METHOD:{method}\r\n
 BEGIN:VEVENT\r\n
 UID:{event_uid}@hospitalapp.com\r\n
 DTSTAMP:{now_str}Z\r\n
@@ -65,8 +94,8 @@ DESCRIPTION:{event_description}\r\n
 LOCATION:{location}\r\n
 ORGANIZER;CN={sender_email}:MAILTO:{sender_email}\r\n
 ATTENDEE;CN={recipient_name};ROLE=REQ-PARTICIPANT;PARTSTAT=NEEDS-ACTION;RSVP=TRUE:MAILTO:{recipient_email}\r\n
-STATUS:CONFIRMED\r\n
-SEQUENCE:0\r\n
+STATUS:{status}\r\n
+SEQUENCE:{sequence}\r\n
 TRANSP:OPAQUE\r\n
 CLASS:PUBLIC\r\n
 END:VEVENT\r\n
@@ -157,3 +186,6 @@ def example_5_interactive():
             start_time=start_str,
             location=location
         )
+
+if __name__ == "__main__":
+    example_5_interactive()

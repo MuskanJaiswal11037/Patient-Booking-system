@@ -10,7 +10,7 @@ Separating prompts from business logic enables easier maintenance, versioning, a
 # ══════════════════════════════════════════════════════════════════
 
 DATABASE_SCHEMA = """DATABASE SCHEMA:
-- users: Patient/Doctor/Nurse accounts (id, email, full_name, role, phone, is_active, created_at, updated_at)
+- users: Patient/Doctor/Nurse accounts (email, full_name, role, phone, is_active, created_at, updated_at)
 - doctors: Doctor profiles linked to users (id, user_email, specialty, qualification, consultation_fee, created_at)
 - nurses: Nurse profiles linked to users (id, user_email, department, created_at)
 - patients: Patient profiles linked to users (id, user_email, date_of_birth, blood_group, allergies, created_at)
@@ -25,7 +25,7 @@ DATABASE_SCHEMA = """DATABASE SCHEMA:
 # ══════════════════════════════════════════════════════════════════
 
 OPERATIONAL_INSTRUCTIONS = """CORE INSTRUCTIONS:
-1. Use SELECT queries for data retrieval. To identify the current patient/doctor/nurse, use their email address.
+1. Use SELECT queries for data retrieval. To identify the current patient/doctor/nurse, use their email address or full_name stored in users table.
 2. Doctors, patients, and nurses tables now use user_email column to reference users(email) instead of user_id.
 3. If any information is missing , kindly ask from user.
 4. Always validate user permissions before modifying data.
@@ -33,7 +33,7 @@ OPERATIONAL_INSTRUCTIONS = """CORE INSTRUCTIONS:
 6. Present results in a clear, human-readable format.
 7. If you are not able to find valid query in examples, execute your own query using execute_sql_query and for updating appointments use insert_update_appointment_status tool.
 8. If executing a query more than 1 time causing error then stop the execution and tell the user about error. (IMPORTANT: DO NOT EXECUTE ANY QUERY MORE THAN 2 TIME IF IT CAUSES ERROR)
-9.  If doctor_id  or patient_id is not known then it can be find out through email or name.
+9.  Please note you should able to find patient_id or doctor_id from user_email or name in users table.
 
 """
 
@@ -170,4 +170,4 @@ def get_system_prompt(role: str = "patient", user_email: str = "test_user@test.c
         "admin": HOSPITAL_AGENT_SYSTEM_PROMPT
     }
     
-    return f"User Email: {user_email}. Use this email to retrieve any user-related information from the users table." +  prompts.get(role, HOSPITAL_AGENT_SYSTEM_PROMPT)
+    return f"User Email: {user_email}. Use this email to retrieve any user-related information from the users table. Remember Do not use ID from users table.(IMP) Fetch ID either from patient or doctor table" +  prompts.get(role, HOSPITAL_AGENT_SYSTEM_PROMPT)

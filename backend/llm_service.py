@@ -24,7 +24,7 @@ from .utils import DatabaseHandler, DatabaseException
 from .utils.prompts import get_system_prompt
 from langgraph.checkpoint.postgres import PostgresSaver
 
-from .tools import execute_sql_query, insert_update_appointment_status, insert_feedback, insert_update_doctor_availability, insert_medical_record, retrieve_medical_records
+from .tools import doctors_patients_id_from_name, execute_sql_query, insert_update_appointment_status, insert_feedback, insert_update_doctor_availability, insert_medical_record, retrieve_medical_records
 logger = logging.getLogger(__name__)
 
 
@@ -63,7 +63,7 @@ def create_deep_agent_for_hospital(user_email: str = "test_user@test.com", role:
     user_email : str
         Email of the user interacting with the agent
     """
-    tools = [execute_sql_query, insert_update_appointment_status, insert_feedback, insert_update_doctor_availability, insert_medical_record, retrieve_medical_records, insert_medical_record, retrieve_medical_records]
+    tools = [execute_sql_query, insert_update_appointment_status, insert_feedback, insert_update_doctor_availability, insert_medical_record, retrieve_medical_records, insert_medical_record, retrieve_medical_records, doctors_patients_id_from_name]
     system_prompt = "System Prompt: " +  get_system_prompt(role, user_email)
     lanchain_checkpoint.setup()  # Create tables if they don't exist
     agent = create_deep_agent(

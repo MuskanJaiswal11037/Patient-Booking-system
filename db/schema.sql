@@ -10,7 +10,6 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 -- 1. USERS  (auth table, all roles)
 -- ──────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS users (
-    id VARCHAR(255),
     email VARCHAR(255) PRIMARY KEY,
     full_name VARCHAR(255) NOT NULL,
     role VARCHAR(20) NOT NULL CHECK (role IN ('patient', 'doctor', 'nurse', 'admin')),
@@ -20,6 +19,8 @@ CREATE TABLE IF NOT EXISTS users (
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+select * from users;
+alter table users drop COLUMN id;
 
 -- DOCTORS
 CREATE TABLE IF NOT EXISTS doctors (
@@ -79,8 +80,8 @@ CREATE TABLE IF NOT EXISTS appointments (
     doctor_id       UUID NOT NULL REFERENCES doctors(id) ON DELETE CASCADE,
     appointment_at  TIMESTAMPTZ NOT NULL,
     duration_minutes INT DEFAULT 30,
-    status          VARCHAR(20) DEFAULT 'scheduled'
-                        CHECK (status IN ('scheduled','completed','cancelled','no_show')),
+    status          VARCHAR(20) DEFAULT 'pending'
+                        CHECK (status IN ('pending', 'scheduled', 'completed', 'cancelled', 'no_show')),
     reason          TEXT,
     notes           TEXT,
     cancelled_by    VARCHAR(255) REFERENCES users(email),
@@ -103,9 +104,7 @@ BEGIN
         WHERE doctor_id = p_doctor_id
         AND status = 'scheduled'
         AND id != COALESCE(p_appointment_id, '00000000-0000-0000-0000-000000000000')
-        AND appointment_at BETWEEN
-            p_appointment_at
-            AND p_appointment_at + interval '29 minutes' 
+        AND appointment_at != p_appointment_at
      ) ;
 END;
 $$ LANGUAGE plpgsql;
@@ -143,6 +142,10 @@ BEGIN
         RAISE EXCEPTION 'Appointment time cannot be in the past.';
     END IF;
     
+    IF NEW.appointment_at::TIME >= TIME '13:00:00'
+        AND NEW.appointment_at::TIME < TIME '13:30:00' THEN
+        RAISE EXCEPTION 'Appointments are not allowed between 1:00 PM and 1:30 PM (lunch break).';
+    END IF;
     -- Only check if status is 'scheduled'
     IF NEW.status = 'scheduled' THEN
         IF NOT check_doctor_availability(
@@ -178,6 +181,13 @@ CREATE TABLE IF NOT EXISTS feedback (
     created_at     TIMESTAMPTZ DEFAULT NOW()
 );
 
+create table calender_events (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    appointment_id UUID NOT NULL REFERENCES appointments(id) ON DELETE CASCADE,
+    event_uid VARCHAR(255) NOT NULL,
+    sequence INT NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
 
 -- INSERT INTO appointments (id, patient_id, doctor_id, appointment_at, status, reason, created_at, updated_at)
 --             VALUES (%s,4e9d7565-a7f7-4764-8f76-61f56088ed19, 2df39159-ee26-4153-adcb-49ac1605e257, %s, %s, %s, NOW(), NOW())

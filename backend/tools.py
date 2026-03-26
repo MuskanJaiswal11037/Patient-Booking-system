@@ -12,11 +12,61 @@ from textblob import TextBlob
 from .utils.mongodb_connection import medical_records_collection 
 import datetime
 
+@tool
+def doctors_patients_id_from_name(full_name: str) -> dict:
+    """Get doctors or patients ID from full name.
+
+    Args:
+        full_name: Full name of the user.
+
+    Returns:
+        id of the user
+    """
+    query = """
+    SELECT email FROM users
+    WHERE full_name LIKE %s
+    """
+    params = (f"%{full_name}%",),
+    result = db_handler.execute_query(query, params)
+    if result:
+        query1 = """
+        SELECT id FROM patients
+        WHERE user_email = %s
+        """
+        params1 = (result[0]["email"],)
+        result1 = db_handler.execute_query(query1, params1)
+        if result1:
+            return {
+                "success": True,
+                "patient_id": result1[0]["id"]
+            }
+        else:
+            query2 = """
+            SELECT id FROM doctors
+            WHERE user_email = %s
+            """
+            params2 = (result[0]["email"],)
+            result2 = db_handler.execute_query(query2, params2)
+            if result2:
+                return {
+                    "success": True,
+                    "doctor_id": result2[0]["id"]
+                }
+        return {
+            "success": True,
+            "user": result[0]
+        }
+    else:
+        return {
+            "success": False,
+            "message": "User not found."
+        }
+
 @tool 
 def insert_update_doctor_availability(doctor_id: str, role: str, day_of_week: int, start_time: str, end_time: str, slot_duration_minutes: int) -> dict:
    
     """Insert or update doctor availability based on doctor_id and day_of_week and start_time in doctor_availability table
-    
+
     Args:
         doctor_id: UUID of the doctor (as string)
         role: User role (should be 'doctor')
@@ -67,7 +117,7 @@ def insert_update_appointment_status(user_email:str, id:uuid.UUID, new_status: s
         appointment_id: ID of the appointment to update or cancel.
         new_status: New status (e.g., 'scheduled', 'completed', 'cancelled').
         action: Action to perform ('add', 'update_status', 'update_time').
-        appointment_data: Dictionary containing details i.e (patient_id, doctor_id, name, appointment_at, duration_minutes, reason) required for adding new appointment.
+        appointment_data: Dictionary containing details i.e (patient_id, doctor_id, name, appointment_at, duration_minutes, reason) required for adding new appointment. appointment_At should be in the format "YYYY-MM-DD HH:MM:SS"
         role: Role of the user performing the action (e.g., 'patient', 'doctor').
         updated_appointment_time: New appointment time for reschedulling
     Returns:
@@ -75,6 +125,7 @@ def insert_update_appointment_status(user_email:str, id:uuid.UUID, new_status: s
     """
     try:
         db = db_handler
+        load_dotenv()
         appointment_id = uuid.uuid4()
         if action == "add":
             if not appointment_data:
@@ -93,24 +144,13 @@ def insert_update_appointment_status(user_email:str, id:uuid.UUID, new_status: s
                 appointment_data["patient_id"],
                 appointment_data["doctor_id"],
                 appointment_data["appointment_at"],
-                'scheduled',
+                'pending',
                 appointment_data.get("duration_minutes", 30),
                 appointment_data.get("reason", ""),
             )
             result = db.execute_query(query, params)
  
-            if result:
-                load_dotenv()
-                send_calendar_invite(
-                    sender_email=os.getenv("GMAIL_SENDER_ADDRESS"),
-                    sender_password=os.getenv("GMAIL_SENDER_PASSWORD"),
-                    recipient_email=user_email,
-                    recipient_name=appointment_data.get("name", "Patient"),
-                    event_title="Doctor Appointment",
-                    event_description=appointment_data.get("reason", ""),
-                    start_time=appointment_data["appointment_at"],
-                )
-
+            if result:  
                 return {
                     "success": True,
                     "message": "New appointment added successfully.",
@@ -133,15 +173,41 @@ def insert_update_appointment_status(user_email:str, id:uuid.UUID, new_status: s
             result = db.execute_query(query, params)
 
             if result:
-                return {
-                    "success": True,
-                    "message": f"Appointment {id} updated successfully.",
-                    "updated_appointment": result[0],
-                }
+                if new_status == "cancelled":
+                    send_calendar_invite(
+                        sender_email=os.getenv("GMAIL_SENDER_ADDRESS"),
+                        sender_password=os.getenv("GMAIL_SENDER_PASSWORD"),
+                        recipient_email="radhe.muskan26@gmail.com",
+                        recipient_name=appointment_data.get("name", "Patient"),
+                        event_title="Doctor Appointment",
+                        event_description=appointment_data.get("reason", ""),
+                        start_time=appointment_data["appointment_at"],
+                        app_id=str(id),
+                        db_handler=db_handler,
+                        method="CANCEL"
+                    )
+                if new_status == "scheduled":
+                    send_calendar_invite(
+                        sender_email=os.getenv("GMAIL_SENDER_ADDRESS"),
+                        sender_password=os.getenv("GMAIL_SENDER_PASSWORD"),
+                        recipient_email="radhe.muskan26@gmail.com",
+                        recipient_name=appointment_data.get("name", "Patient"),
+                        event_title="Doctor Appointment",
+                        event_description=appointment_data.get("reason", ""),
+                        start_time=appointment_data["appointment_at"],
+                        app_id=str(id),
+                        db_handler=db_handler,
+                        method="REQUEST"
+                    )
+                    return {
+                        "success": True,
+                        "message": f"Appointment {id} updated successfully.",
+                        "updated_appointment": result[0],
+                    }
             else:
                 return {
                     "success": False,
-                    "message": f"No appointment found with ID {appointment_id}",
+                    "message": f"No appointment found with ID {id}",
                 }
         elif action == "update_time":
             if role == "patient":
@@ -162,6 +228,20 @@ def insert_update_appointment_status(user_email:str, id:uuid.UUID, new_status: s
             result = db.execute_query(query, params)
 
             if result:
+                # Send calendar update invite
+                send_calendar_invite(
+                        sender_email=os.getenv("GMAIL_SENDER_ADDRESS"),
+                        sender_password=os.getenv("GMAIL_SENDER_PASSWORD"),
+                        recipient_email="radhe.muskan26@gmail.com",
+                        recipient_name=appointment_data.get("name", "Patient"),
+                        event_title="Doctor Appointment Rescheduled",
+                        event_description=appointment_data.get("reason", ""),
+                        start_time=updated_appointment_time,
+                        app_id=str(id),
+                        db_handler=db_handler,
+                        method="UPDATE"
+                    )
+
                 return {
                     "success": True,
                     "message": f"Appointment {id} updated successfully.",
@@ -192,7 +272,7 @@ def execute_sql_query(query: str) -> dict:
     Execute a SELECT query against the hospital database.
     
     Tables available:
-    - users: id, email, full_name, role, phone, is_active, created_at
+    - users: email, full_name, role, phone, is_active, created_at
     - doctors: id, user_email, specialty, qualification, consultation_fee
     - patients: id, user_email, date_of_birth, blood_group, allergies
     - nurses: id, user_email, department
@@ -370,10 +450,11 @@ def calculate_rating_from_message(message):
 
 @tool
 # Function to insert feedback into the feedback table
-def insert_feedback(user_email, doctor_id, message):
+def insert_feedback(patient_id, doctor_id, message):
     """
     Insert feedback into the feedback table.
     - schema feedback: id, appointment_id, patient_email, doctor_id, ai_rating, raw_feedback
+    If the patient_id is not know it can be found out using user_email
     Args:
         patient_id (str): The ID of the patient providing the feedback.
         doctor_id (str): The ID of the doctor receiving the feedback.
@@ -386,11 +467,11 @@ def insert_feedback(user_email, doctor_id, message):
     
     id = uuid.uuid4()  # Generate a unique ID for the feedback entry
     query = """
-    INSERT INTO feedback (id, patient_email, doctor_id, raw_feedback, ai_rating, created_at)
+    INSERT INTO feedback (id, patient_id, doctor_id, raw_feedback, ai_rating, created_at)
     VALUES (%s, %s, %s, %s, %s, NOW());
     """
 
-    params = (id, user_email, doctor_id, message, rating)
+    params = (id, patient_id, doctor_id, message, rating)
     db_handler.execute_query(query, params)
 
     return f"Feedback inserted with rating {rating}"

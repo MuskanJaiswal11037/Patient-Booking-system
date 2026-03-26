@@ -14,7 +14,6 @@ class User(BaseModel):
 
 # ── Auth ────────────────────────────────────────────────────────
 class RegisterRequest(BaseModel):
-    user_id:   str
     email:     EmailStr
     # password:  str = Field(min_length=6, max_length=72)
     full_name: str
