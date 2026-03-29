@@ -20,14 +20,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from backend.utils import queue_management_data
 from backend.database import get_db, engine, Base
 from backend.models import (User, Doctor, Patient, Appointment,
                              ChatMessage, Feedback)
 from backend.auth import (hash_password, verify_password, create_access_token,
                            get_current_user, require_role)
 from backend.schemas import (RegisterRequest, TokenResponse, ChatRequest,
-                              ChatResponse, AppointmentOut, CancelRequest,
-                              FeedbackRequest, FeedbackOut, DoctorOut, User as UserSchema, isRegisteredRequest, isRegisteredResponse)
+                              ChatResponse, CancelRequest,
+                              FeedbackRequest, FeedbackOut, DoctorOut, User as UserSchema, isRegisteredRequest, isRegisteredResponse, AppointmentRequest, UpdateAppointmentStatusRequest, QueueManagementResponse)
 from backend import llm_service
 
 app = FastAPI(title="MedApp API", version="1.0.0")
@@ -126,6 +127,42 @@ async def check_or_insert_user(
 
 
 
+@app.post("/appointment_details", response_model=QueueManagementResponse)
+async def appointment_details(body: AppointmentRequest):
+    result = queue_management_data.extract_appointments_data(
+        doctor_email=body.doctor_email or None, status=body.status or None
+    )
+    print(result)
+    if result["success"]:
+        return QueueManagementResponse(
+            success=result["success"],
+            message=result["message"],
+            availability=result["availability"],
+        )
+    raise HTTPException(status_code=400, detail=result["message"])
+
+@app.get("/waiting_list", response_model=QueueManagementResponse)
+async def waiting_list():
+    result = queue_management_data.waiting_list_people()
+    if result["success"]:
+        return QueueManagementResponse(
+            success=result["success"],
+            message=result["message"],
+            availability=result["availability"],
+        )
+    raise HTTPException(status_code=400, detail=result["message"])
+    
+
+@app.post("/update_appointment_status", response_model=QueueManagementResponse)
+async def update_appointment_status(body: UpdateAppointmentStatusRequest):
+    result = queue_management_data.update_status(body.appointment_id, body.status)
+    if result["success"]:
+        return QueueManagementResponse(
+            success=result["success"],
+            message=result["message"],
+            availability=result["availability"],
+        )
+    raise HTTPException(status_code=400, detail=result["message"])
 
 # ══════════════════════════════════════════════════════════════════
 #  CHAT  (LLM booking agent)
@@ -148,10 +185,13 @@ async def chat(
         raise HTTPException(400, "Patient profile not found")
     
     
-    role = db.execute(select(User.role).where(User.email == user.email))
-    role = role.scalar_one_or_none()
-    role =  role[0]["role"] if role else "patient" 
-    response = llm_service.chat_with_deep_agent(body.message, user_email=user.email, role=role)
+    user_role = db.execute(select(User.role).where(User.email == user.email)).scalar_one_or_none()
+    role = user_role or user.role or "patient"
+    response = llm_service.chat_with_deep_agent(
+        body.message,
+        user_email=user.email or "",
+        user_role=role,
+    )
     print(response)
 
     # Persist messages to chat history
@@ -165,4 +205,7 @@ async def chat(
         appointment=None,
         suggested_slots=None,
     )
+
+
+
 

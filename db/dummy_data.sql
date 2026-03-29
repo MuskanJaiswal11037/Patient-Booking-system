@@ -519,4 +519,6 @@ SELECT id FROM doctors WHERE user_email = (SELECT email FROM users WHERE full_na
 select * from doctors;
 select * from patients;
 
+select * from users;
 select * from feedback;
+select * from doctor_availability;

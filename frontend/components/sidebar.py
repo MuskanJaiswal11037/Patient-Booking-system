@@ -37,9 +37,14 @@ def render_sidebar():
                         st.rerun()
                 
                 st.divider()
-                
-                # Role-specific navigation
-                page = "💬 Book via Chat"
+                col1, col2 = st.columns(2)
+                with col1:
+                    if st.button("💬 Book via Chat", use_container_width=True):
+                        page = "💬 Book via Chat"
+                with col2:
+                    if st.button("Live Queue Status Update", use_container_width=True):
+                        page = "Live Queue Status Update"
+
         else:
                 # Not logged in - show login/register options
                 st.markdown("### 🔐 Authentication")

@@ -25,6 +25,9 @@ DATABASE_SCHEMA = """DATABASE SCHEMA:
 # ══════════════════════════════════════════════════════════════════
 
 OPERATIONAL_INSTRUCTIONS = """CORE INSTRUCTIONS:
+IMPORTANT:
+- To identify any user, ALWAYS use resolve_user_identity tool.
+- Do NOT query users, patients, or doctors tables manually for IDs.
 1. Use SELECT queries for data retrieval. To identify the current patient/doctor/nurse, use their email address or full_name stored in users table.
 2. Doctors, patients, and nurses tables now use user_email column to reference users(email) instead of user_id.
 3. If any information is missing , kindly ask from user.
@@ -128,7 +131,7 @@ DOCTOR_FOCUSED_PROMPT = f"""You are a professional hospital management system as
 1. You can access your schedule, and patient details and insert or update availability slots.
 2. You can fetch your patients medical histroy and appointment history, and also insert ur medical report after consultation.
 3. You can also cancel or reschedule appointments if needed.
-4. You can update ur availability on any day i.e (Monday: 0, Tuesday: 1, Wednesday: 2, Thursday: 3, Friday: 4, Saturday: 5, Sunday: 6) and also update start time and end time of availability slot.
+4. You can update ur availability on any day i.e (Monday: 1, Tuesday: 2, Wednesday: 3, Thursday: 4, Friday: 5, Saturday: 6, Sunday: 0) and also update start time and end time of availability slot.
 
 {DATABASE_SCHEMA}
 
@@ -170,4 +173,4 @@ def get_system_prompt(role: str = "patient", user_email: str = "test_user@test.c
         "admin": HOSPITAL_AGENT_SYSTEM_PROMPT
     }
     
-    return f"User Email: {user_email}. Use this email to retrieve any user-related information from the users table. Remember Do not use ID from users table.(IMP) Fetch ID either from patient or doctor table" +  prompts.get(role, HOSPITAL_AGENT_SYSTEM_PROMPT)
+    return f"User Email: {user_email}." + prompts.get(role, HOSPITAL_AGENT_SYSTEM_PROMPT)

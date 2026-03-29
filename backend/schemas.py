@@ -1,15 +1,15 @@
 # backend/schemas.py
 from pydantic import BaseModel, EmailStr, Field
-from typing import Optional, List
+from typing import Optional, List, Any, Dict, Union
 from datetime import datetime, date, time
-from uuid import UUID
 
 
 class User(BaseModel):
-    id: str
-    email: Optional[str]
-    full_name: str
-    role: str
+    # Keep this permissive because frontend identity providers may send non-UUID IDs.
+    id: Optional[str] = None
+    email: Optional[str] = None
+    full_name: Optional[str] = None
+    role: Optional[str] = None
     
 
 # ── Auth ────────────────────────────────────────────────────────
@@ -24,6 +24,12 @@ class RegisterRequest(BaseModel):
     # patient extras
     date_of_birth: Optional[date] = None
     blood_group:   Optional[str]  = None
+
+
+class AppointmentRequest(BaseModel):
+    doctor_email: Optional[str] = None
+    status: Optional[str] = None
+
 
 class LoginRequest(BaseModel):
     email:    EmailStr
@@ -71,6 +77,18 @@ class AppointmentOut(BaseModel):
 
     class Config:
         from_attributes = True
+
+class UpdateAppointmentStatusRequest(BaseModel):
+    appointment_id: str
+    status: str
+
+
+class QueueManagementResponse(BaseModel):
+    """Response for /appointment_details and /update_appointment_status."""
+    success: bool
+    message: str
+    availability: Optional[Union[List[Dict[str, Any]], Dict[str, Any]]] = None
+
 
 class CancelRequest(BaseModel):
     appointment_id: str

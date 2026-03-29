@@ -9,7 +9,7 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.base import MIMEBase
 from email import encoders
 import ssl
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import uuid
 
 from numpy import select
@@ -37,8 +37,19 @@ def send_calendar_invite(app_id, sender_email, sender_password, recipient_email,
     try:
         print("\n📅 Creating calendar invite...")
 
-        # Convert string → datetime
-        start_time = datetime.strptime(start_time, "%Y-%m-%d %H:%M:%S")
+        if not sender_email or not sender_password or not recipient_email:
+            print("❌ Missing sender/recipient email configuration.")
+            return False
+
+        # Accept both datetime and string formats.
+        if isinstance(start_time, datetime):
+            if start_time.tzinfo is not None:
+                start_time = start_time.astimezone(timezone.utc).replace(tzinfo=None) + timedelta(hours=5, minutes=30)
+        elif isinstance(start_time, str):
+            start_time = datetime.strptime(start_time, "%Y-%m-%d %H:%M:%S")
+        else:
+            print(f"❌ Unsupported start_time type: {type(start_time)}")
+            return False
         end_time = start_time + timedelta(minutes=30)
 
         # 🔥 Convert IST → UTC
@@ -50,32 +61,32 @@ def send_calendar_invite(app_id, sender_email, sender_password, recipient_email,
         now_str = datetime.utcnow().strftime("%Y%m%dT%H%M%S")
 
         event_uid = str(uuid.uuid4())
-
+        Method2 = "CANCEL" if method == "CANCEL" else "SCHEDULE"
         if method == "CANCEL":
             status = "CANCELLED"
         else:
             status = "CONFIRMED"
 
         if db_handler:
-            query = "SELECT id FROM appointments WHERE id = %s"
+            query = "SELECT event_uid, sequence FROM calender_events WHERE appointment_id = %s"
             result = db_handler.execute_query(query, (app_id,))
             if not result:
-
-                # Store event UID in database for future reference (e.g., updates/cancellations)
                 insert_query = """
                     INSERT INTO calender_events (appointment_id, event_uid, sequence)
                     VALUES (%s, %s, %s)
                 """
-                db_handler.execute_query(insert_query, (app_id, event_uid, sequence))  # appointment_id can be updated later
+                db_handler.execute_query(insert_query, (app_id, event_uid, sequence))
             else:
-                if method == "UPDATE":
-                    # For updates, increment sequence number
+                event_uid = result[0].get("event_uid") or event_uid
+                sequence = int(result[0].get("sequence", 0))
+                if method in ("UPDATE", "CANCEL"):
+                    sequence += 1
                     update_query = """
                         UPDATE calender_events 
-                        SET sequence = sequence + 1 
+                        SET sequence = %s
                         WHERE appointment_id = %s
                     """
-                    db_handler.execute_query(update_query, (app_id,))
+                    db_handler.execute_query(update_query, (sequence, app_id))
 
 
         # ✅ Proper ICS format
@@ -114,7 +125,7 @@ END:VCALENDAR\r\n
         <body>
             <h3>📅 {event_title}</h3>
             <p><b>Hi {recipient_name},</b></p>
-            <p>You have a scheduled appointment.</p>
+            <p>You have a {Method2} appointment.</p>
             <p><b>Date:</b> {start_time.strftime('%B %d, %Y')}</p>
             <p><b>Time:</b> {start_time.strftime('%I:%M %p')} - {end_time.strftime('%I:%M %p')}</p>
             <p><b>Location:</b> {location or "Not specified"}</p>
@@ -126,7 +137,7 @@ END:VCALENDAR\r\n
         message.attach(MIMEText(html_body, "html"))
 
         # 🔥 CRITICAL: Calendar part (NOT attachment)
-        calendar_part = MIMEText(ics_content, "calendar;method=REQUEST", "utf-8")
+        calendar_part = MIMEText(ics_content, f"calendar;method={method}", "utf-8")
         calendar_part.add_header("Content-Disposition", "inline")
 
         message.attach(calendar_part)

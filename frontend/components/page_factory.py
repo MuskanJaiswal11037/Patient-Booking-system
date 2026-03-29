@@ -4,6 +4,7 @@ from typing import Callable, Optional, Tuple
 from components.utils import is_logged_in, get_state_manager
 from components.auth import render_login_page, render_register_page
 from pages_components.patient_chat import render_patient_chat_page
+from pages_components.queue_real_time_status import page_dashboard
 # from pages_components.patient_appointments import render_patient_appointments_page
 # from pages_components.patient_feedback import render_patient_feedback_page
 # from pages_components.schedule import render_schedule_page
@@ -82,6 +83,13 @@ class PageFactory:
         self.register_page(
             "💬 Book via Chat",
             render_patient_chat_page,
+            requires_auth=True,
+            allowed_roles=["patient"]
+        )
+
+        self.register_page(
+            "Live Queue Status Update",
+            page_dashboard,
             requires_auth=True,
             allowed_roles=["patient"]
         )

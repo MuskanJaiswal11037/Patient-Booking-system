@@ -1,9 +1,12 @@
 """API client module for backend communication."""
+from typing import Any, List, Optional
+
 import streamlit as st
 import httpx
+import json
 from components.config import BACKEND_URL
 from components.utils import get_state_manager, get_token
-
+import pandas as pd
 
 def api_request(method: str, path: str, **kwargs):
     """
@@ -61,6 +64,7 @@ def register(user_id: str, full_name: str, email: str, phone: str = None,
              date_of_birth: str = None, blood_group: str = None):
     """Register new user."""
     payload = {
+        "user_id": user_id,
         "full_name": full_name,
         "email": email,
         "phone": phone,
@@ -101,5 +105,82 @@ def send_chat_message(message: str):
             }
         }
     )
+
+def get_waiting_list() -> Optional[List[Any]]:
+    # Avoid trailing-slash redirects/mismatch across deployments.
+    response = api_request("GET", "/waiting_list")
+    if response is None:
+        return None
+    if response.status_code != 200:
+        try:
+            detail = response.json().get("message", response.text)
+        except Exception:
+            detail = response.text
+        st.error(f"waiting_list failed: {detail}")
+        return None
+    data = response.json()
+    if not data.get("success", True):
+        st.error(data.get("message", "Unable to load waiting list"))
+        return None
+    return data.get("availability", [])
+
+def get_appointment_details(
+    doctor_email: Optional[str] = None,
+    status: Optional[str] = None,
+) -> Optional[List[Any]]:
+    """
+    Queue management: list appointments (POST /appointment_details).
+
+    Parameters
+    ----------
+    doctor_email : str, optional
+        Filter by doctor's user email. None or empty = all doctors.
+    status : str, optional
+        Filter by queue status (scheduled, in-progress, ...). None or 'All' = any.
+    """
+    payload = {}
+    payload["doctor_email"] = doctor_email
+    
+    payload["status"] = status
+    print(payload)
+    response = api_request("POST", "/appointment_details", json=payload)
+    if response is None:
+        return None
+    if response.status_code != 200:
+        try:
+            detail = response.json().get("message", response.text)
+        except Exception:
+            detail = response.text
+        st.error(f"appointment_details failed: {response.json().get('message', response.text)}")
+        return None
+    data = response.json()
+    if not data.get("success"):
+        st.error(response.json().get("message", response.text))
+        return None
+    avail = data.get("availability")
+    return avail
+
+
+def update_queue_appointment_status(appointment_id: str, status: str) -> bool:
+    """Queue management: update status (POST /update_appointment_status)."""
+    response = api_request(
+        "POST",
+        "/update_appointment_status",
+        json={"appointment_id": str(appointment_id), "status": status},
+    )
+    if response is None:
+        return False
+    if response.status_code != 200:
+        try:
+            detail = response.json().get("message", response.text)
+        except Exception:
+            detail = response.text
+        st.error(f"update_appointment_status failed: {detail}")
+        return False
+    data = response.json()
+    if not data.get("success"):
+        st.error(data.get("message", "Update failed"))
+        return False
+    return True
 
 

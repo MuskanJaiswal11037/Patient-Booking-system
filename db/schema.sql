@@ -18,7 +18,9 @@ CREATE TABLE IF NOT EXISTS users (
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
+Alter table users add column id VARCHAR(255);
 
+select * from users;
 select * from users;
 alter table users drop COLUMN id;
 
@@ -63,7 +65,7 @@ create table admin_profiles (
 -- ──────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS doctor_availability (
     id         UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    doctor_id  UUID NOT NULL REFERENCES doctors(id) ON DELETE CASCADE,
+    doctor_id  UUID NULL REFERENCES doctors(id) ON DELETE CASCADE,
     day_of_week INT NOT NULL CHECK (day_of_week BETWEEN 0 AND 6), -- 0=Mon, 6=Sun
     start_time TIME NOT NULL,
     end_time   TIME NOT NULL,
@@ -71,44 +73,44 @@ CREATE TABLE IF NOT EXISTS doctor_availability (
     UNIQUE (doctor_id, day_of_week, start_time)
 );
 
+
+drop table appointments;
 -- ──────────────────────────────────────────────────────────────
 -- 5. APPOINTMENTS
 -- ──────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS appointments (
-    id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id             UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     patient_id     UUID NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
-    doctor_id       UUID NOT NULL REFERENCES doctors(id) ON DELETE CASCADE,
+    doctor_id       UUID REFERENCES doctors(id) ON DELETE CASCADE,
     appointment_at  TIMESTAMPTZ NOT NULL,
     duration_minutes INT DEFAULT 30,
     status          VARCHAR(20) DEFAULT 'pending'
-                        CHECK (status IN ('pending', 'scheduled', 'completed', 'cancelled', 'no_show')),
+                        CHECK (status IN ('pending', 'scheduled', 'completed', 'cancelled', 'no_show', 'in-progress')),
     reason          TEXT,
     notes           TEXT,
     cancelled_by    VARCHAR(255) REFERENCES users(email),
     cancelled_at    TIMESTAMPTZ,
     cancel_reason   TEXT,
-    criticality_level VARCHAR(20) CHECK (criticality_level IN ('low', 'medium', 'high')) DEFAULT 'low',
-    is_confirmed BOOLEAN DEFAULT FALSE,
+    criticality_level VARCHAR(20) CHECK (criticality_level IN ('low', 'Emergency')) DEFAULT 'low',
     created_at      TIMESTAMPTZ DEFAULT NOW(),
     updated_at      TIMESTAMPTZ DEFAULT NOW()
 );
 
-CREATE OR REPLACE FUNCTION check_doctor_availability(
-    p_doctor_id UUID,
-    p_appointment_at TIMESTAMP WITH TIME ZONE,
-    p_appointment_id UUID DEFAULT NULL
-) RETURNS BOOLEAN AS $$
+
+CREATE OR REPLACE FUNCTION check_start_time_limit()
+RETURNS TRIGGER AS $$
 BEGIN
-    RETURN NOT EXISTS (
-        SELECT 1 FROM appointments
-        WHERE doctor_id = p_doctor_id
-        AND status = 'scheduled'
-        AND id != COALESCE(p_appointment_id, '00000000-0000-0000-0000-000000000000')
-        AND appointment_at != p_appointment_at
-     ) ;
+    IF (
+        SELECT COUNT(*) 
+        FROM appointments 
+        WHERE start_time = NEW.start_time
+    ) == 2 THEN
+        RETURN NULL;
+    END IF;
+
+    RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
-
 
 CREATE OR REPLACE FUNCTION validate_appointment_slot()
 RETURNS TRIGGER AS $$
@@ -146,17 +148,11 @@ BEGIN
         AND NEW.appointment_at::TIME < TIME '13:30:00' THEN
         RAISE EXCEPTION 'Appointments are not allowed between 1:00 PM and 1:30 PM (lunch break).';
     END IF;
-    -- Only check if status is 'scheduled'
-    IF NEW.status = 'scheduled' THEN
-        IF NOT check_doctor_availability(
-            NEW.doctor_id, 
-            NEW.appointment_at,
-            NEW.id
-        ) THEN
-            RAISE EXCEPTION 'Doctor is busy during that time slot. Please choose a different time.';
-        END IF;
-    END IF;
-    
+
+    IF not check_start_time_limit() THEN
+        RAISE EXCEPTION 'More than 2 appointments are not possible at same time.'
+    END IF
+
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
@@ -194,3 +190,4 @@ create table calender_events (
 --             id, appointment_at, status;
 
 
+select * from appointments;

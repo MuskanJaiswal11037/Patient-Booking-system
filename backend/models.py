@@ -1,10 +1,11 @@
 # backend/models.py
 import uuid
 from datetime import datetime
+from groq import BaseModel
 from sqlalchemy import (Column, String, Boolean, DateTime, ForeignKey,
                         Integer, Text, Numeric, Date, Time, CheckConstraint, UniqueConstraint)
 from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import relationship, synonym
 from backend.database import Base
 
 def new_uuid():
@@ -12,7 +13,10 @@ def new_uuid():
 
 class User(Base):
     __tablename__ = "users"
-    email         = Column(String(255), primary_key=True, unique=True, nullable=False)
+    email         = Column(String(255), primary_key=True, nullable=False)
+    id            = synonym("email")
+    # Keep `user.id` available in code as an alias to `email`.
+    
     full_name     = Column(String(255), nullable=False)
     role          = Column(String(20), nullable=False)
     phone         = Column(String(20))

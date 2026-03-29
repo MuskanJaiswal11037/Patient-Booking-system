@@ -20,11 +20,9 @@ from langchain_openai import ChatOpenAI
 from langgraph import func
 from backend.config import settings
 from .utils import DatabaseHandler, DatabaseException
-
 from .utils.prompts import get_system_prompt
 from langgraph.checkpoint.postgres import PostgresSaver
-
-from .tools import doctors_patients_id_from_name, execute_sql_query, insert_update_appointment_status, insert_feedback, insert_update_doctor_availability, insert_medical_record, retrieve_medical_records
+from .tools import execute_sql_query, insert_update_appointment_status, insert_feedback, insert_update_doctor_availability, insert_medical_record, resolve_user_identity, retrieve_medical_records
 logger = logging.getLogger(__name__)
 
 
@@ -54,7 +52,7 @@ atexit.register(lanchain_checkpoint_creator.__exit__, None, None, None)  # Ensur
 # ══════════════════════════════════════════════════════════════════
 
 
-def create_deep_agent_for_hospital(user_email: str = "test_user@test.com", role: str = "patient"):
+def create_deep_agent_for_hospital(user_email: str = "test_user@test.com", user_role: str = "patient"):
     """
     Create Deep Agent with database schema knowledge.
     
@@ -62,9 +60,12 @@ def create_deep_agent_for_hospital(user_email: str = "test_user@test.com", role:
     ----------
     user_email : str
         Email of the user interacting with the agent
+    user_role : str
+        Role of the user interacting with the agent (e.g., "patient", "doctor", "nurse", "admin")
     """
-    tools = [execute_sql_query, insert_update_appointment_status, insert_feedback, insert_update_doctor_availability, insert_medical_record, retrieve_medical_records, insert_medical_record, retrieve_medical_records, doctors_patients_id_from_name]
-    system_prompt = "System Prompt: " +  get_system_prompt(role, user_email)
+    tools = [execute_sql_query, insert_update_appointment_status, insert_feedback, insert_update_doctor_availability, insert_medical_record, retrieve_medical_records, insert_medical_record, retrieve_medical_records, resolve_user_identity]
+    print("++++++++++++++++++++++++++++++++++++++++++   " + user_role  )
+    system_prompt = "System Prompt: " +  get_system_prompt(user_role, user_email)
     lanchain_checkpoint.setup()  # Create tables if they don't exist
     agent = create_deep_agent(
         tools=tools,
@@ -80,7 +81,7 @@ def create_deep_agent_for_hospital(user_email: str = "test_user@test.com", role:
 # ══════════════════════════════════════════════════════════════════
 
 
-def chat_with_deep_agent(user_message: str, user_email: str = "test_user@test.com", role: str = "patient") -> Dict[str, Any]:
+def chat_with_deep_agent(user_message: str, user_email: str = "test_user@test.com", user_role: str = "patient") -> Dict[str, Any]:
     """
     Chat with the Deep Agent for hospital queries.
 
@@ -93,7 +94,7 @@ def chat_with_deep_agent(user_message: str, user_email: str = "test_user@test.co
         Dictionary with response and metadata
     """
     try:
-        agent = create_deep_agent_for_hospital(user_email=user_email, role=role)
+        agent = create_deep_agent_for_hospital(user_email=user_email, user_role=user_role)
         messages = [{"role": "user", "content": user_message}]
 
         response = agent.invoke(
