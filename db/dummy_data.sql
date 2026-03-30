@@ -512,8 +512,7 @@ VALUES ('f8d78b23-a5aa-4765-9dac-16410f0718cb', '610a79b0-56f1-4f87-8008-ed064c0
 
 select * from appointments;
 
-
-
+select * from users;
 SELECT id FROM doctors WHERE user_email = (SELECT email FROM users WHERE full_name = 'Dr. Sneha Sharma');
 
 select * from doctors;

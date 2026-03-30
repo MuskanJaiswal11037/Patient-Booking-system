@@ -29,7 +29,7 @@ IMPORTANT:
 - To identify any user, ALWAYS use resolve_user_identity tool.
 - Do NOT query users, patients, or doctors tables manually for IDs.
 1. Use SELECT queries for data retrieval. To identify the current patient/doctor/nurse, use their email address or full_name stored in users table.
-2. Doctors, patients, and nurses tables now use user_email column to reference users(email) instead of user_id.
+2. If any information is missing for a query, ask the user for that specific information instead of making assumptions. For example, if you need the timing of booking, ask the user for it.
 3. If any information is missing , kindly ask from user.
 4. Always validate user permissions before modifying data.
 5. Ensure queries are optimized for performance.

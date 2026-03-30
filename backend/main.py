@@ -28,7 +28,7 @@ from backend.auth import (hash_password, verify_password, create_access_token,
                            get_current_user, require_role)
 from backend.schemas import (RegisterRequest, TokenResponse, ChatRequest,
                               ChatResponse, CancelRequest,
-                              FeedbackRequest, FeedbackOut, DoctorOut, User as UserSchema, isRegisteredRequest, isRegisteredResponse, AppointmentRequest, UpdateAppointmentStatusRequest, QueueManagementResponse)
+                              FeedbackRequest, FeedbackOut, DoctorOut, User as UserSchema, isRegisteredRequest, isRegisteredResponse, AppointmentRequest, UpdateAppointmentStatusRequest, QueueManagementResponse, QueueDoctorsResponse, CreateEmergencyQuickRequest, AssignEmergencyDoctorRequest)
 from backend import llm_service
 
 app = FastAPI(title="MedApp API", version="1.0.0")
@@ -163,6 +163,48 @@ async def update_appointment_status(body: UpdateAppointmentStatusRequest):
             availability=result["availability"],
         )
     raise HTTPException(status_code=400, detail=result["message"])
+
+
+@app.get("/emergency_appointments", response_model=QueueManagementResponse)
+async def emergency_appointments():
+    result = queue_management_data.list_emergency_appointments()
+    return QueueManagementResponse(
+        success=result["success"],
+        message=result["message"],
+        availability=result["availability"],
+    )
+
+
+@app.get("/queue/doctors", response_model=QueueDoctorsResponse)
+async def queue_doctors():
+    result = queue_management_data.list_doctors_for_queue()
+    if not result["success"]:
+        raise HTTPException(status_code=400, detail=result.get("message", "Failed to load doctors"))
+    return QueueDoctorsResponse(
+        success=True,
+        message=result["message"],
+        doctors=result["doctors"],
+    )
+
+
+
+@app.post("/create_emergency_appointment_quick", response_model=QueueManagementResponse)
+async def create_emergency_appointment_quick(body: CreateEmergencyQuickRequest):
+    result = queue_management_data.create_emergency_appointment_now(
+        patient_email=str(body.patient_email),
+        reason=body.reason,
+        doctor_email=str(body.doctor_email) if body.doctor_email else None,
+        patient_name=str(body.patient_name) if body.patient_name else None,
+    )
+    if result["success"]:
+        return QueueManagementResponse(
+            success=result["success"],
+            message=result["message"],
+            availability=result["availability"],
+        )
+    raise HTTPException(status_code=400, detail=result["message"])
+
+
 
 # ══════════════════════════════════════════════════════════════════
 #  CHAT  (LLM booking agent)

@@ -1,5 +1,5 @@
 """API client module for backend communication."""
-from typing import Any, List, Optional
+from typing import Any, Dict, List, Optional
 
 import streamlit as st
 import httpx
@@ -159,6 +159,81 @@ def get_appointment_details(
         return None
     avail = data.get("availability")
     return avail
+
+
+def get_emergency_appointments() -> Optional[List[Any]]:
+    response = api_request("GET", "/emergency_appointments")
+    if response is None:
+        return None
+    if response.status_code != 200:
+        try:
+            detail = response.json().get("message", response.text)
+        except Exception:
+            detail = response.text
+        st.error(f"emergency_appointments failed: {detail}")
+        return None
+    data = response.json()
+    if not data.get("success", True):
+        st.error(data.get("message", "Unable to load emergency cases"))
+        return None
+    return data.get("availability") or []
+
+
+def get_queue_doctors() -> Optional[List[Dict[str, Any]]]:
+    response = api_request("GET", "/queue/doctors")
+    if response is None:
+        return None
+    if response.status_code != 200:
+        try:
+            detail = response.json().get("message", response.text)
+        except Exception:
+            detail = response.text
+        st.error(f"queue/doctors failed: {detail}")
+        return None
+    data = response.json()
+    if not data.get("success", True):
+        st.error(data.get("message", "Unable to load doctors"))
+        return None
+    return data.get("doctors") or []
+
+
+def create_emergency_appointment_quick(
+    patient_email: str,
+    reason: str,
+    patient_name: str,
+    doctor_email: Optional[str] = None
+) -> bool:
+    """Emergency only: appointment_at is database NOW()."""
+    payload: Dict[str, Any] = {
+        "patient_email": patient_email.strip(),
+        "reason": reason.strip(),
+    }
+    if doctor_email and str(doctor_email).strip():
+        payload["doctor_email"] = str(doctor_email).strip()
+
+    if patient_name and str(patient_name).strip():
+        payload["patient_name"] = str(patient_name).strip()
+
+    response = api_request(
+        "POST", "/create_emergency_appointment_quick", json=payload
+    )
+    if response is None:
+        return False
+    if response.status_code != 200:
+        try:
+            j = response.json()
+            detail = j.get("detail")
+            if not isinstance(detail, str):
+                detail = j.get("message", response.text)
+        except Exception:
+            detail = response.text
+        st.error(f"create_emergency_appointment_quick failed: {detail}")
+        return False
+    data = response.json()
+    if not data.get("success"):
+        st.error(data.get("message", "Create failed"))
+        return False
+    return True
 
 
 def update_queue_appointment_status(appointment_id: str, status: str) -> bool:

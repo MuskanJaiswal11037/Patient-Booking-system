@@ -64,7 +64,7 @@ class DoctorAvailability(Base):
     day_of_week           = Column(Integer, nullable=False)   # 0=Mon … 6=Sun
     start_time            = Column(Time, nullable=False)
     end_time              = Column(Time, nullable=False)
-    slot_duration_minutes = Column(Integer, default=30)
+    slot_duration_minutes = Column(Integer, default=15)
 
     doctor = relationship("Doctor", back_populates="availability")
 
@@ -76,7 +76,7 @@ class Appointment(Base):
     patient_id       = Column(UUID(as_uuid=False), ForeignKey("patients.id", ondelete="CASCADE"))
     doctor_id        = Column(UUID(as_uuid=False), ForeignKey("doctors.id", ondelete="CASCADE"))
     appointment_at   = Column(DateTime(timezone=True), nullable=False)
-    duration_minutes = Column(Integer, default=30)
+    duration_minutes = Column(Integer, default=15)
     status           = Column(String(20), default="scheduled")
     reason           = Column(Text)
     notes            = Column(Text)

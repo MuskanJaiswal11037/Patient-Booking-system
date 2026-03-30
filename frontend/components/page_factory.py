@@ -88,7 +88,7 @@ class PageFactory:
         )
 
         self.register_page(
-            "Live Queue Status Update",
+            "Live Queue Status 📊",
             page_dashboard,
             requires_auth=True,
             allowed_roles=["patient"]

@@ -42,8 +42,8 @@ def render_sidebar():
                     if st.button("💬 Book via Chat", use_container_width=True):
                         page = "💬 Book via Chat"
                 with col2:
-                    if st.button("Live Queue Status Update", use_container_width=True):
-                        page = "Live Queue Status Update"
+                    if st.button("Live Queue Status 📊", use_container_width=True):
+                        page = "Live Queue Status 📊"
 
         else:
                 # Not logged in - show login/register options

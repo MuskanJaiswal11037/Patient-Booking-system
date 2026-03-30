@@ -104,7 +104,7 @@ def resolve_user_identity(name_or_email: str) -> dict:
 
 
 @tool 
-def insert_update_doctor_availability(doctor_id: str, role: str, day_of_week: int, start_time: str, end_time: str, slot_duration_minutes: int) -> dict:
+def insert_update_doctor_availability(doctor_id: str, role: str, day_of_week: int, start_time: str, end_time: str, slot_duration_minutes = 15) -> dict:
    
     """Insert or update doctor availability based on doctor_id and day_of_week and start_time in doctor_availability table
 
@@ -114,7 +114,7 @@ def insert_update_doctor_availability(doctor_id: str, role: str, day_of_week: in
         day_of_week: Day of week (1=Monday, 0=Sunday)
         start_time: Start time as string (format: HH:MM:SS)
         end_time: End time as string (format: HH:MM:SS)
-        slot_duration_minutes: Duration of appointment slots in minutes
+        slot_duration_minutes: Duration of appointment slots in minutes (default: 15)
     """
     if role == "doctor":
         #Insert or update doctor availability based on doctor_id and day_of_week and start_time
@@ -174,7 +174,7 @@ def insert_update_appointment_status(user_email:str, id:uuid.UUID, new_status: s
                     "success": False,
                     "message": "Appointment data is required for adding a new appointment."
                 }
- 
+                
             query = """
             INSERT INTO appointments (id, patient_id, doctor_id, appointment_at, status,duration_minutes, reason, created_at, updated_at)
             VALUES (%s, %s, %s, %s, %s, %s, %s, NOW(), NOW())
@@ -185,8 +185,8 @@ def insert_update_appointment_status(user_email:str, id:uuid.UUID, new_status: s
                 appointment_data["patient_id"],
                 appointment_data["doctor_id"],
                 appointment_data["appointment_at"],
-                'pending',
-                appointment_data.get("duration_minutes", 30),
+                'scheduled',
+                appointment_data.get("duration_minutes", 15),
                 appointment_data.get("reason", ""),
             )
             result = db.execute_query(query, params)
