@@ -3,7 +3,16 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 from datetime import datetime, date
+from datetime import datetime, date
 from typing import Optional, Dict, List, Tuple, Any
+from components.api import (
+    get_appointment_details,
+    update_queue_appointment_status,
+    get_waiting_list,
+    get_emergency_appointments,
+    get_queue_doctors,
+    create_emergency_appointment_quick,
+)
 from components.api import (
     get_appointment_details,
     update_queue_appointment_status,
@@ -16,6 +25,9 @@ from components.utils import get_state_manager
 from streamlit_autorefresh import st_autorefresh
 
 
+from streamlit_autorefresh import st_autorefresh
+
+
 
 _QUEUE_PAGE_CSS = """
 <style>
@@ -23,8 +35,13 @@ body, .stApp {
     background-color: #0f1115 !important;
     color: #e6e6e6 !important;
 }
+body, .stApp {
+    background-color: #0f1115 !important;
+    color: #e6e6e6 !important;
+}
 .main {
     padding: 0rem 1rem;
+    background: transparent !important;
     background: transparent !important;
 }
 .stMetric {
@@ -33,14 +50,17 @@ body, .stApp {
     padding: 1.5rem;
     border-radius: 0.5rem;
     box-shadow: 0 2px 10px rgba(0,0,0,0.35);
+    box-shadow: 0 2px 10px rgba(0,0,0,0.35);
 }
 .stMetric label {
+    color: rgba(255,255,255,0.85);
     color: rgba(255,255,255,0.85);
 }
 .queue-card {
     border-left: 4px solid #667eea;
     padding: 1rem;
     border-radius: 0.5rem;
+    background: #171a22;
     background: #171a22;
     margin-bottom: 1rem;
 }
@@ -58,6 +78,7 @@ body, .stApp {
 .status-in-progress {
     background-color: #ffc107;
     color: #111214;
+    color: #111214;
 }
 .status-completed {
     background-color: #28a745;
@@ -66,6 +87,36 @@ body, .stApp {
 .status-no-show {
     background-color: #dc3545;
     color: white;
+}
+/* Button Styles */
+.stButton > button {
+    background-color: #1f77b4 !important;
+    color: white !important;
+    border: 1px solid #1f77b4 !important;
+    border-radius: 5px !important;
+    padding: 0.5rem 1rem !important;
+    font-weight: 600 !important;
+}
+.stButton > button:hover {
+    background-color: #1557a0 !important;
+    border-color: #1557a0 !important;
+}
+/* Form Submit Buttons */
+.stFormSubmitButton > button {
+    background-color: #28a745 !important;
+    color: white !important;
+    border: 1px solid #28a745 !important;
+    border-radius: 5px !important;
+    padding: 0.5rem 1rem !important;
+    font-weight: 600 !important;
+}
+.stFormSubmitButton > button:hover {
+    background-color: #218838 !important;
+    border-color: #218838 !important;
+}
+/* App Header */
+.stAppHeader {
+    background-color: #0f1115 !important;
 }
 /* Button Styles */
 .stButton > button {
@@ -501,8 +552,110 @@ def _render_emergency_tab() -> None:
                 
 
 
+@st.cache_data(ttl=15)
+def _emergency_appointments_df_cached() -> pd.DataFrame:
+    df = _appointments_df_cached("", "All")
+    rows = df[df["criticality_level"] == 0]
+    rows  = rows[rows["status"] == "scheduled"]
+    if rows.empty:
+        return pd.DataFrame()
+    return rows
+
+
+@st.cache_data(ttl=60)
+def _queue_doctors_picklist_cached() -> List[Dict[str, Any]]:
+    docs = get_queue_doctors()
+    return docs if docs else []
+
+def _render_emergency_tab() -> None:
+    st.subheader("Emergency cases")
+    st.caption(
+        "Create **emergency** slots (criticality 0): time is stored as **database NOW()**. "
+        "Patient must already be registered."
+    )
+    if st.button("Refresh emergency list", key="refresh_emergency_tab"):
+        st.cache_data.clear()
+        st.rerun()
+
+    doctors = _queue_doctors_picklist_cached()
+    email_labels = {d["user_email"]: f"{d['full_name']} — {d['specialty']}" for d in doctors}
+    doctor_emails = [d["user_email"] for d in doctors]
+
+    with st.expander("Create emergency appointment", expanded=True):
+        with st.form("form_emergency_quick", clear_on_submit=True):
+            eq_patient = st.text_input(
+                "Patient email *",
+                key="emq_patient",
+                help="Must match `patients.user_email`.",
+            )
+            eq_reason = st.text_area("Reason *", key="emq_reason", height=72)
+            eq_doc_email = st.text_input(
+                "Doctor email(Assigned)",
+                key="emq_doc_email",
+                help="Leave blank to create the emergency case without assigning a doctor yet.",
+            )
+            st.write(" ")
+            eq_patient_name = st.text_input(
+                "Patient name ",
+                key="emq_patient_name",
+                help="Used for convenience; appointment creation still uses patient email to find the patient record.",
+            )
+            st.caption("Appointment time is set automatically on the server (SQL `NOW()`).")
+            eq_submit = st.form_submit_button("Create emergency appointment")
+
+        if eq_submit:
+            if not (eq_patient or "").strip():
+                st.warning("Patient email is required.")
+            elif not (eq_reason or "").strip():
+                st.warning("Reason is required.")
+            else:
+                dem = (eq_doc_email or "").strip() or None
+                pem = (eq_patient_name or "").strip() or None
+                if create_emergency_appointment_quick(
+                    patient_email= eq_patient.strip(),
+                    reason=eq_reason.strip(),
+                    doctor_email=dem,
+                    patient_name = pem
+                ):
+                    st.success("Emergency appointment created.")
+                    st.cache_data.clear()
+                    st.rerun()
+
+    st.divider()
+    st.markdown("**Active emergency cases Pending**")
+
+    df = _emergency_appointments_df_cached()
+
+    if not doctors and not df.empty:
+        st.warning("No doctors registered yet—assignments below need doctors in the system.")
+
+    if df.empty:
+        st.info("No active emergency appointments.")
+    else:
+        for _, row in df.iterrows():
+            aid = row.get("id")
+            pid = row.get("patient_id")
+            cur_doc = row.get("doctor_id")
+            with st.container(border=True):
+                c1, c2, c3 = st.columns([2, 2, 2])
+                with c1:
+                    patient_name = row.get("patient_name") or pid
+                    st.write(f"**Patient** `{patient_name}`")
+                    st.caption(f"Case ID: `{aid}`")
+                with c2:
+                    st.write(f"⏰ {row.get('appointment_at')}")
+                    st.write(
+                        f"**{row.get('status')}** · Assigned doctor id: `{cur_doc if pd.notna(cur_doc) and cur_doc else '—'}`"
+                    )
+                    if row.get("reason"):
+                        st.caption(str(row.get("reason"))[:280])
+                
+
+
 def page_dashboard():
     """Queue management: Overview, Update Appointments, Live Queue."""
+    st_autorefresh(interval=300000, key="datarefresh")
+
     st_autorefresh(interval=300000, key="datarefresh")
 
     _apply_queue_page_styles()
@@ -510,6 +663,11 @@ def page_dashboard():
     if "queue_doctor_email" not in st.session_state:
         st.session_state.queue_doctor_email = state.get("user_email") or ""
 
+    # st.sidebar.text_input(
+    #     "Doctor email filter (empty = all doctors)",
+    #     key="queue_doctor_email",
+    #     help="Restrict queue to one doctor's calendar, or leave blank for all.",
+    # )
     # st.sidebar.text_input(
     #     "Doctor email filter (empty = all doctors)",
     #     key="queue_doctor_email",
@@ -537,6 +695,9 @@ def page_dashboard():
 
     with tab_live:
         _render_live_queue_tab(doctor_email)
+
+    with tab_emergency:
+        _render_emergency_tab()
 
     with tab_emergency:
         _render_emergency_tab()
@@ -611,4 +772,5 @@ if __name__ == "__main__":
         initial_sidebar_state="expanded",
     )
     main()
+
 

@@ -1,5 +1,7 @@
 from typing import Any, Dict, List, Optional, Tuple
 import uuid
+from typing import Any, Dict, List, Optional, Tuple
+import uuid
 from .database_handler import db_handler
 
 def extract_appointments_data(
@@ -60,6 +62,7 @@ def waiting_list_people():
         SELECT *
         FROM appointments
         WHERE status IN ('scheduled', 'rescheduled')
+          AND appointment_at <= NOW()
           AND appointment_at <= NOW()
           AND DATE(appointment_at) = CURRENT_DATE
         ORDER BY criticality_level, appointment_at, created_at

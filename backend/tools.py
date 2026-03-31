@@ -189,6 +189,7 @@ def insert_update_doctor_availability(doctor_id: str, role: str, day_of_week: in
         start_time: Start time as string (format: HH:MM:SS)
         end_time: End time as string (format: HH:MM:SS)
         slot_duration_minutes: Duration of appointment slots in minutes (default: 15)
+        slot_duration_minutes: Duration of appointment slots in minutes (default: 15)
     """
     if role == "doctor":
         #Insert or update doctor availability based on doctor_id and day_of_week and start_time
@@ -272,6 +273,8 @@ def insert_update_appointment_status(user_email:str, id:uuid.UUID, new_status: s
                 appointment_data["patient_id"],
                 appointment_data["doctor_id"],
                 appointment_data["appointment_at"],
+                'scheduled',
+                appointment_data.get("duration_minutes", 15),
                 'scheduled',
                 appointment_data.get("duration_minutes", 15),
                 appointment_data.get("reason", ""),

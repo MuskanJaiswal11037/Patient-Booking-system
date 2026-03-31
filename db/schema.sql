@@ -70,6 +70,7 @@ CREATE TABLE IF NOT EXISTS doctor_availability (
     start_time TIME NOT NULL,
     end_time   TIME NOT NULL,
     slot_duration_minutes INT DEFAULT 15,
+    slot_duration_minutes INT DEFAULT 15,
     UNIQUE (doctor_id, day_of_week, start_time)
 );
 
@@ -91,6 +92,7 @@ CREATE TABLE IF NOT EXISTS appointments (
     cancelled_by    VARCHAR(255) REFERENCES users(email),
     cancelled_at    TIMESTAMPTZ,
     cancel_reason   TEXT,
+    criticality_level INT DEFAULT 1 CHECK (criticality_level BETWEEN 0 AND 1),
     criticality_level INT DEFAULT 1 CHECK (criticality_level BETWEEN 0 AND 1),
     created_at      TIMESTAMPTZ DEFAULT NOW(),
     updated_at      TIMESTAMPTZ DEFAULT NOW()
@@ -119,6 +121,7 @@ DECLARE
     v_end_time TIME;
     v_day_of_week INT;
     v_count INT;
+    v_count INT;
 BEGIN
     -- Extract day of week from appointment_at
     v_day_of_week := EXTRACT(DOW FROM NEW.appointment_at);
@@ -137,10 +140,14 @@ BEGIN
         
     -- Check if appointment time falls within available hours
     IF NEW.appointment_at::TIME < v_start_time OR NEW.appointment_at::TIME > v_end_time THEN
+    IF NEW.appointment_at::TIME < v_start_time OR NEW.appointment_at::TIME > v_end_time THEN
         RAISE EXCEPTION 'Appointment time % is not within doctor''s available hours (% to %)',
                 NEW.appointment_at::TIME, v_start_time, v_end_time;
     END IF;
 
+    -- IF NEW.appointment_at < NOW() THEN
+    --     RAISE EXCEPTION 'Appointment time cannot be in the past.';
+    -- END IF;
     -- IF NEW.appointment_at < NOW() THEN
     --     RAISE EXCEPTION 'Appointment time cannot be in the past.';
     -- END IF;
@@ -150,6 +157,14 @@ BEGIN
         RAISE EXCEPTION 'Appointments are not allowed between 1:00 PM and 1:30 PM (lunch break).';
     END IF;
 
+    -- ✅ Check max 2 appointments at same time
+    SELECT COUNT(*) INTO v_count
+    FROM appointments
+    WHERE appointment_at = NEW.appointment_at and doctor_id = NEW.doctor_id;
+
+    IF v_count >= 2 THEN
+        RAISE EXCEPTION 'More than 2 appointments not allowed at same time.';
+    END IF;
     -- ✅ Check max 2 appointments at same time
     SELECT COUNT(*) INTO v_count
     FROM appointments
