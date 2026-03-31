@@ -1,6 +1,6 @@
 # backend/schemas.py
 from pydantic import BaseModel, EmailStr, Field
-from typing import Optional, List, Any, Dict, Union
+from typing import Optional, List, Any, Dict, Union, Literal
 from datetime import datetime, date, time
 
 
@@ -48,6 +48,16 @@ class TokenResponse(BaseModel):
     full_name:    str
     user_email:   str
 
+
+class UserRoleResponse(BaseModel):
+    role: str
+    email: str
+    full_name: str
+
+
+class UserRoleRequest(BaseModel):
+    email: str
+
 # ── Doctors ─────────────────────────────────────────────────────
 class DoctorOut(BaseModel):
     id:               str
@@ -63,7 +73,7 @@ class AvailabilitySlot(BaseModel):
     day_of_week:           int
     start_time:            time
     end_time:              time
-    slot_duration_minutes: int = 30
+    slot_duration_minutes: int = 15
 
 # ── Appointments ────────────────────────────────────────────────
 class AppointmentOut(BaseModel):
@@ -83,11 +93,32 @@ class UpdateAppointmentStatusRequest(BaseModel):
     status: str
 
 
+class AssignEmergencyDoctorRequest(BaseModel):
+    """Assign a doctor to an emergency appointment (criticality level matches queue config)."""
+    appointment_id: str
+    doctor_email: EmailStr
+
+
+class CreateEmergencyQuickRequest(BaseModel):
+    """Emergency-only: time is server NOW(). Patient must exist. Doctor optional: by email and/or id."""
+    patient_email: EmailStr
+    reason: str = Field(..., min_length=1, max_length=2000)
+    patient_name :str
+    doctor_email: Optional[EmailStr] = None
+    
+
+
 class QueueManagementResponse(BaseModel):
     """Response for /appointment_details and /update_appointment_status."""
     success: bool
     message: str
     availability: Optional[Union[List[Dict[str, Any]], Dict[str, Any]]] = None
+
+
+class QueueDoctorsResponse(BaseModel):
+    success: bool
+    message: str
+    doctors: List[Dict[str, Any]] = Field(default_factory=list)
 
 
 class CancelRequest(BaseModel):

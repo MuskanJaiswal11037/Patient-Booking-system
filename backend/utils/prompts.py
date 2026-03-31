@@ -26,10 +26,9 @@ DATABASE_SCHEMA = """DATABASE SCHEMA:
 
 OPERATIONAL_INSTRUCTIONS = """CORE INSTRUCTIONS:
 IMPORTANT:
-- To identify any user, ALWAYS use resolve_user_identity tool.
-- Do NOT query users, patients, or doctors tables manually for IDs.
-1. Use SELECT queries for data retrieval. To identify the current patient/doctor/nurse, use their email address or full_name stored in users table.
-2. Doctors, patients, and nurses tables now use user_email column to reference users(email) instead of user_id.
+- To identify any user, ALWAYS use resolve_user_identity tool. DONT Execute any query of ur own.
+- Do NOT query users, patients, or doctors tables manually for IDs or email. First find ID using resolve_user_identity tool then search for email or name.
+2. If any information is missing for a query, ask the user for that specific information instead of making assumptions. For example, if you need the timing of booking, ask the user for it.
 3. If any information is missing , kindly ask from user.
 4. Always validate user permissions before modifying data.
 5. Ensure queries are optimized for performance.
@@ -37,7 +36,6 @@ IMPORTANT:
 7. If you are not able to find valid query in examples, execute your own query using execute_sql_query and for updating appointments use insert_update_appointment_status tool.
 8. If executing a query more than 1 time causing error then stop the execution and tell the user about error. (IMPORTANT: DO NOT EXECUTE ANY QUERY MORE THAN 2 TIME IF IT CAUSES ERROR)
 9.  Please note you should able to find patient_id or doctor_id from user_email or name in users table.
-
 """
 
 
@@ -46,19 +44,6 @@ IMPORTANT:
 # ══════════════════════════════════════════════════════════════════
 
 SQL_QUERY_EXAMPLES = """SQL QUERY EXAMPLES:
-
-1. Get patient_id from user email:
-   SELECT p.id FROM patients p 
-   WHERE p.user_email = '<user_email>';
-
-2. Get doctor_id from user email:
-   SELECT d.id FROM doctors d 
-   WHERE d.user_email = '<user_email>';
-   3. Get a doctor's availability schedule:
-   SELECT da.day_of_week, da.start_time, da.end_time, da.slot_duration_minutes 
-   FROM doctor_availability da 
-   WHERE da.doctor_id = '<doctor_id>'
-   ORDER BY da.day_of_week;
 
 3. Get all doctors in a specialty:
    SELECT u.full_name, d.specialty, d.qualification, d.consultation_fee 

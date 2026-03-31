@@ -2,7 +2,7 @@
 import streamlit as st
 from components.utils import is_logged_in, logout, reset_chat_history, get_state_manager
 from components.config import ROLE_NAVIGATION
-from components.api import is_registered
+from components.api import is_registered, get_user_role
 
 
 def render_sidebar():
@@ -42,8 +42,17 @@ def render_sidebar():
                     if st.button("💬 Book via Chat", use_container_width=True):
                         page = "💬 Book via Chat"
                 with col2:
-                    if st.button("Live Queue Status Update", use_container_width=True):
-                        page = "Live Queue Status Update"
+                    # Get user role and conditionally show Queue Status button
+                    user_email = state.get("user_email")
+                    user_role = get_user_role(user_email) if user_email else None
+                    print(f"User role in sidebar: {user_role}")  # Debug print
+                    # Only show Queue Status for non-patients (doctors, nurses, admin, etc.)
+                    if user_role and user_role != "patient":
+                        if st.button("Live Queue Status 📊", use_container_width=True):
+                            page = "Live Queue Status 📊"
+                    else:
+                        # Show a disabled/grayed out message for patients
+                        st.caption("📊 Queue Status (Staff Only)")
 
         else:
                 # Not logged in - show login/register options

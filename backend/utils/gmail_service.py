@@ -36,7 +36,6 @@ def send_calendar_invite(app_id, sender_email, sender_password, recipient_email,
     """
     try:
         print("\n📅 Creating calendar invite...")
-
         if not sender_email or not sender_password or not recipient_email:
             print("❌ Missing sender/recipient email configuration.")
             return False
@@ -50,7 +49,7 @@ def send_calendar_invite(app_id, sender_email, sender_password, recipient_email,
         else:
             print(f"❌ Unsupported start_time type: {type(start_time)}")
             return False
-        end_time = start_time + timedelta(minutes=30)
+        end_time = start_time + timedelta(minutes=15)
 
         # 🔥 Convert IST → UTC
         start_utc = start_time - timedelta(hours=5, minutes=30)
@@ -124,7 +123,7 @@ END:VCALENDAR\r\n
         <html>
         <body>
             <h3>📅 {event_title}</h3>
-            <p><b>Hi {recipient_name},</b></p>
+            <p><b>Hi Doctor,</b></p>
             <p>You have a {Method2} appointment.</p>
             <p><b>Date:</b> {start_time.strftime('%B %d, %Y')}</p>
             <p><b>Time:</b> {start_time.strftime('%I:%M %p')} - {end_time.strftime('%I:%M %p')}</p>
@@ -134,7 +133,7 @@ END:VCALENDAR\r\n
         </html>
         """
 
-        message.attach(MIMEText(html_body, "html"))
+        # message.attach(MIMEText(html_body, "html"))
 
         # 🔥 CRITICAL: Calendar part (NOT attachment)
         calendar_part = MIMEText(ics_content, f"calendar;method={method}", "utf-8")
@@ -157,6 +156,67 @@ END:VCALENDAR\r\n
         server.quit()
 
         print("✅ Invite sent successfully!\n")
+        return True
+
+    except Exception as e:
+        print(f"❌ Error: {e}")
+        return False
+
+
+def send_confirmation_email(sender_email, sender_password, recipient_email, recipient_name, subject, status):
+    """
+    Send a confirmation email to a recipient.
+
+    Args:
+        sender_email: Your Gmail address (e.g., 'your_email@gmail.com')
+        sender_password: Your 16-character App Password
+        recipient_email: Recipient's email address (e.g., 'friend@example.com')
+        recipient_name: Recipient's name (e.g., 'John Doe')
+        subject: Subject of the email
+        status: Status of the appointment (e.g., 'CONFIRMED', 'CANCELLED')
+
+    Returns:
+        bool: True if successful, False otherwise
+    """
+    try:
+        print("\n📧 Creating confirmation email...")
+
+        if not sender_email or not sender_password or not recipient_email:
+            print("❌ Missing sender/recipient email configuration.")
+            return False
+
+        # Create the email message
+        message = MIMEMultipart()
+        message["From"] = sender_email
+        message["To"] = recipient_email
+        message["Subject"] = subject
+
+        # Add the email body
+        html_body = f"""
+        <html>
+        <body>
+            <p><b>Hi {recipient_name},</b></p>
+            <p>Your appointment has been {status}. Thank you for your attention.</p>
+        </body>
+        </html>
+        """
+        message.attach(MIMEText(html_body, "html"))
+
+        # Send the email
+        context = ssl.create_default_context()
+
+        print("🔌 Connecting to SMTP...")
+        server = smtplib.SMTP("smtp.gmail.com", 587)
+        server.starttls(context=context)
+
+        print("🔐 Logging in...")
+        server.login(sender_email, sender_password)
+
+        print("📤 Sending confirmation email...")
+        server.sendmail(sender_email, recipient_email, message.as_string())
+        server.quit()
+
+        print("✅ Confirmation email sent successfully!\n")
         return True
 
     except Exception as e:

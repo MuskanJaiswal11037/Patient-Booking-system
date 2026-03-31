@@ -6,19 +6,26 @@ from dotenv import load_dotenv
 from langchain_core.tools import tool
 import uuid
 
-from backend.utils.gmail_service import send_calendar_invite
+from backend.utils.gmail_service import send_calendar_invite, send_confirmation_email
 from .utils.database_handler import db_handler, DatabaseException
 from textblob import TextBlob
 from .utils.mongodb_connection import medical_records_collection 
+from .utils.drive_service import upload_medical_record_to_drive
 import datetime
 
 
 @tool
-def resolve_user_identity(name_or_email: str) -> dict:
+def resolve_user_identity(full_name: str = None, email: str = None) -> dict:
     """
-    Smart resolver:
-    - Detects 'Dr.' → doctor
-    - Detects 'patient' → patient
+    Smart resolver to find user details by name or email.
+    
+    Args:
+        full_name: Full name/name  of the user (supports 'Dr.', 'Doctor','patient' prefixes for doctors) or the user who has logged in.
+        email: Email address of the user
+    
+    Detects:
+    - 'Dr.' or 'Doctor' prefix → doctor
+    - 'patient' keyword → patient
     - Otherwise falls back to DB role
 
     Returns:
@@ -26,85 +33,152 @@ def resolve_user_identity(name_or_email: str) -> dict:
         success: bool,
         role: str | None,
         patient_id: str | None,
-        doctor_id: str | None
+        doctor_id: str | None,
+        email: str,
+        full_name: str
     }
     """
 
-    identifier = name_or_email.lower().strip()
+    try:
+        # 🔥 Step 1: Validate inputs
+        if not full_name and not email:
+            return {
+                "success": False,
+                "role": None,
+                "patient_id": None,
+                "doctor_id": None,
+                "message": "Either full_name or email is required"
+            }
 
-    # 🔥 Step 1: detect hints
-    is_doctor_hint = "dr" in identifier or "doctor" in identifier
-    is_patient_hint = "patient" in identifier
+        # 🔥 Step 2: Try exact email match first
+        if email:
+            query = """
+            SELECT 
+                u.email,
+                u.role,
+                u.full_name,
+                p.id AS patient_id,
+                d.id AS doctor_id
+            FROM users u
+            LEFT JOIN patients p ON u.email = p.user_email
+            LEFT JOIN doctors d ON u.email = d.user_email
+            WHERE u.email = %s 
+            LIMIT 1
+            """
+            result = db_handler.execute_query(query, (email,))
+            if result:
+                row = result[0]
+                return {
+                    "success": True,
+                    "role": row["role"],
+                    "patient_id": row["patient_id"],
+                    "doctor_id": row["doctor_id"],
+                    "email": row["email"],
+                    "full_name": row["full_name"]
+                }
 
-    # 🔥 Step 2: clean input (remove prefixes)
-    cleaned_name = identifier.replace("dr.", "").replace("dr", "").replace("doctor", "").replace("patient", "").strip()
+        # 🔥 Step 3: Search by full_name with hint detection
+        if full_name:
+            identifier = full_name.lower().strip()
 
-    query = """
-    SELECT 
-        u.email,
-        u.role,
-        p.id AS patient_id,
-        d.id AS doctor_id
-    FROM users u
-    LEFT JOIN patients p ON u.email = p.user_email
-    LEFT JOIN doctors d ON u.email = d.user_email
-    WHERE u.full_name ILIKE %s OR u.email = %s
-    LIMIT 1
-    """
+            # Detect role hints
+            is_doctor_hint = "dr" in identifier or "doctor" in identifier
+            is_patient_hint = "patient" in identifier
 
-    params = (f"%{cleaned_name}%", name_or_email)
-    result = db_handler.execute_query(query, params)
+            # Clean input (remove prefixes)
+            cleaned_name = identifier.replace("dr.", "").replace("dr", "").replace("doctor", "").replace("patient", "").strip()
 
-    if not result:
+            query = """
+            SELECT 
+                u.email,
+                u.role,
+                u.full_name,
+                p.id AS patient_id,
+                d.id AS doctor_id
+            FROM users u
+            LEFT JOIN patients p ON u.email = p.user_email
+            LEFT JOIN doctors d ON u.email = d.user_email
+            WHERE u.full_name ILIKE %s 
+            LIMIT 1
+            """
+
+            params = (f"%{cleaned_name}%",)
+            result = db_handler.execute_query(query, params)
+
+            if not result:
+                return {
+                    "success": False,
+                    "role": None,
+                    "patient_id": None,
+                    "doctor_id": None,
+                    "message": "User not found"
+                }
+
+            row = result[0]
+            
+            # 🔥 Step 4: Enforce hint-based resolution
+            if is_doctor_hint:
+                if row["doctor_id"]:
+                    return {
+                        "success": True,
+                        "role": "doctor",
+                        "doctor_id": row["doctor_id"],
+                        "patient_id": None,
+                        "email": row["email"],
+                        "full_name": row["full_name"]
+                    }
+                else:
+                    return {
+                        "success": False,
+                        "role": None,
+                        "patient_id": None,
+                        "doctor_id": None,
+                        "message": "User is not a doctor"
+                    }
+
+            if is_patient_hint:
+                if row["patient_id"]:
+                    return {
+                        "success": True,
+                        "role": "patient",
+                        "patient_id": row["patient_id"],
+                        "doctor_id": None,
+                        "email": row["email"],
+                        "full_name": row["full_name"]
+                    }
+                else:
+                    return {
+                        "success": False,
+                        "role": None,
+                        "patient_id": None,
+                        "doctor_id": None,
+                        "message": "User is not a patient"
+                    }
+
+            # 🔥 Step 5: Fallback to actual DB role
+            return {
+                "success": True,
+                "role": row["role"],
+                "patient_id": row["patient_id"],
+                "doctor_id": row["doctor_id"],
+                "email": row["email"],
+                "full_name": row["full_name"]
+            }
+
+    except Exception as e:
         return {
             "success": False,
             "role": None,
             "patient_id": None,
             "doctor_id": None,
-            "message": "User not found"
+            "message": f"Error resolving user identity: {str(e)}"
         }
 
-    row = result[0]
-    # 🔥 Step 3: enforce hint-based resolution
-    if is_doctor_hint:
-        if row["doctor_id"]:
-            return {
-                "success": True,
-                "role": "doctor",
-                "doctor_id": row["doctor_id"],
-                "patient_id": None
-            }
-        else:
-            return {
-                "success": False,
-                "message": "User is not a doctor"
-            }
-
-    if is_patient_hint:
-        if row["patient_id"]:
-            return {
-                "success": True,
-                "role": "patient",
-                "patient_id": row["patient_id"],
-                "doctor_id": None
-            }
-        else:
-            return {
-                "success": False,
-                "message": "User is not a patient"
-            }
-
-    # 🔥 Step 4: fallback to actual DB role
-    return {
-        "success": True,
-        "role": row["role"],
-        "patient_id": row["patient_id"],
-        "doctor_id": row["doctor_id"]
-    }
+    
 
 
 @tool 
-def insert_update_doctor_availability(doctor_id: str, role: str, day_of_week: int, start_time: str, end_time: str, slot_duration_minutes: int) -> dict:
+def insert_update_doctor_availability(doctor_id: str, role: str, day_of_week: int, start_time: str, end_time: str, slot_duration_minutes = 15) -> dict:
    
     """Insert or update doctor availability based on doctor_id and day_of_week and start_time in doctor_availability table
 
@@ -114,7 +188,7 @@ def insert_update_doctor_availability(doctor_id: str, role: str, day_of_week: in
         day_of_week: Day of week (1=Monday, 0=Sunday)
         start_time: Start time as string (format: HH:MM:SS)
         end_time: End time as string (format: HH:MM:SS)
-        slot_duration_minutes: Duration of appointment slots in minutes
+        slot_duration_minutes: Duration of appointment slots in minutes (default: 15)
     """
     if role == "doctor":
         #Insert or update doctor availability based on doctor_id and day_of_week and start_time
@@ -151,14 +225,14 @@ def insert_update_doctor_availability(doctor_id: str, role: str, day_of_week: in
 @tool 
 def insert_update_appointment_status(user_email:str, id:uuid.UUID, new_status: str, action: str, appointment_data: dict = None, role: str = None, updated_appointment_time: datetime = None) -> dict:
     """
-    Add or cancel an appointment.
+    Add or cancel an appointment. If u want to cancel the appointment then new sttus should be cancelled.
 
     Args:
-        user_email: Email of the user with doctor_id
+        user_email: Email of the user who is patient
         id: ID of the appointment to update or cancel.
         new_status: New status (e.g., 'scheduled', 'completed', 'cancelled').
         action: Action to perform ('add', 'update_status', 'update_time').
-        appointment_data: Dictionary containing details i.e (patient_id, doctor_id, name, appointment_at, duration_minutes, reason) required for adding new appointment. appointment_At should be in the format "YYYY-MM-DD HH:MM:SS"
+        appointment_data: Dictionary containing details i.e (patient_id, doctor_id, name, appointment_at, duration_minutes, reason) required for adding new appointment or cancelling the appointment. appointment_at should be in the format "YYYY-MM-DD HH:MM:SS"
         role: Role of the user performing the action (e.g., 'patient', 'doctor').
         updated_appointment_time: New appointment time for reschedulling
     Returns:
@@ -168,16 +242,29 @@ def insert_update_appointment_status(user_email:str, id:uuid.UUID, new_status: s
         db = db_handler
         load_dotenv()
         appointment_id = uuid.uuid4()
+
+        
         if action == "add":
             if not appointment_data:
                 return {
                     "success": False,
                     "message": "Appointment data is required for adding a new appointment."
                 }
- 
+            
+            query ="select user_email from doctors where id = %s"
+            doctor_result = db.execute_query(query, (appointment_data["doctor_id"],))
+            if doctor_result:
+                doctor_email = doctor_result[0].get("user_email", "")
+            
+            if  appointment_data["appointment_at"] < str(datetime.datetime.now()):
+                return {
+                    "success": False,
+                    "message": "Appointment time must be in the future."
+                }
+             # Insert new appointment
             query = """
             INSERT INTO appointments (id, patient_id, doctor_id, appointment_at, status,duration_minutes, reason, created_at, updated_at)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, NOW(), NOW())
+            VALUES (%s, %s, %s, %s, %s, %s, %s, NOW(), NOW()) 
             RETURNING id, patient_id, doctor_id, appointment_at, status;
             """
             params = (
@@ -185,13 +272,35 @@ def insert_update_appointment_status(user_email:str, id:uuid.UUID, new_status: s
                 appointment_data["patient_id"],
                 appointment_data["doctor_id"],
                 appointment_data["appointment_at"],
-                'pending',
-                appointment_data.get("duration_minutes", 30),
+                'scheduled',
+                appointment_data.get("duration_minutes", 15),
                 appointment_data.get("reason", ""),
             )
             result = db.execute_query(query, params)
  
             if result:  
+                # Send confirmation email
+                send_confirmation_email(
+                        sender_email=os.getenv("GMAIL_SENDER_ADDRESS"),     
+                        sender_password=os.getenv("GMAIL_SENDER_PASSWORD"),
+                        recipient_email=user_email,
+                        recipient_name=appointment_data.get("name", "Patient"),
+                        subject="Appointment Confirmation",
+                        status="CONFIRMED"
+                    )   
+                send_calendar_invite(
+                        sender_email=os.getenv("GMAIL_SENDER_ADDRESS"),
+                        sender_password=os.getenv("GMAIL_SENDER_PASSWORD"),
+                        recipient_email=doctor_email,
+                        recipient_name=result[0].get("name", "Patient"),
+                        event_title="Doctor Appointment Scheduled",
+                        event_description=result[0].get("reason", ""),
+                        start_time=appointment_data["appointment_at"],
+                        app_id=str(id),
+                        db_handler=db_handler,
+                        method="REQUEST"
+                    )
+                
                 return {
                     "success": True,
                     "message": "New appointment added successfully.",
@@ -215,57 +324,48 @@ def insert_update_appointment_status(user_email:str, id:uuid.UUID, new_status: s
 
             if result:
                 updated_appointment = result[0]
-                recipient_name = ""
                 event_description = updated_appointment.get("reason", "")
                 start_time = updated_appointment.get("appointment_at")
 
-                if new_status == "cancelled":
-                    if start_time:
-                        send_calendar_invite(
+                query ="select user_email from doctors where  id= %s"
+                doctor_result = db.execute_query(query, (updated_appointment["doctor_id"],))
+                if doctor_result:
+                    doctor_email = doctor_result[0].get("user_email", "")
+
+                if new_status == "cancelled" and doctor_result:
+                    send_confirmation_email(
+                        sender_email=os.getenv("GMAIL_SENDER_ADDRESS"),     
+                        sender_password=os.getenv("GMAIL_SENDER_PASSWORD"),
+                        recipient_email=user_email,
+                        recipient_name= "",
+                        subject="Appointment Cancellation",
+                        status="CANCELLED"
+                    )   
+                    send_calendar_invite(
                             app_id=str(id),
                             sender_email=os.getenv("GMAIL_SENDER_ADDRESS"),
                             sender_password=os.getenv("GMAIL_SENDER_PASSWORD"),
-                            recipient_email=user_email,
-                            recipient_name=recipient_name,
+                            recipient_email=doctor_email,
+                            recipient_name=doctor_result[0].get("full_name", ""),
                             event_title="Doctor Appointment",
                             event_description=event_description,
                             start_time=start_time,
                             db_handler=db_handler,
                             method="CANCEL"
                         )
-                elif new_status == "scheduled":
-                    if start_time:
-                        send_calendar_invite(
-                            sender_email=os.getenv("GMAIL_SENDER_ADDRESS"),
-                            sender_password=os.getenv("GMAIL_SENDER_PASSWORD"),
-                            recipient_email=user_email,
-                            recipient_name=recipient_name or "Patient",
-                            event_title="Doctor Appointment",
-                            event_description=event_description,
-                            start_time=start_time,
-                            app_id=str(id),
-                            db_handler=db_handler,
-                            method="REQUEST"
-                        )
-                    pass
-                return {
+                    
+                    return {
                     "success": True,
-                    "message": f"Appointment {id} updated successfully.",
-                    "updated_appointment": updated_appointment,
+                    "message": "Appointment cancelled successfully",
+                    "appointment": result[0],
                 }
+                        
             else:
                 return {
                     "success": False,
                     "message": f"No appointment found with ID {id}",
                 }
         elif action == "update_time":
-            if role == "patient":
-                 return {
-                    "success": False,
-                    "message": f"Cannot update appointment time. Only doctors can update appointment time.",
-                }
-            
-
             query = """
             UPDATE appointments
             SET appointment_at = %s, updated_at = NOW()
@@ -279,6 +379,14 @@ def insert_update_appointment_status(user_email:str, id:uuid.UUID, new_status: s
             if result:
                 details = appointment_data or {}
                 # Send calendar update invite
+                send_confirmation_email(
+                        sender_email=os.getenv("GMAIL_SENDER_ADDRESS"),     
+                        sender_password=os.getenv("GMAIL_SENDER_PASSWORD"),
+                        recipient_email=user_email,
+                        recipient_name=appointment_data.get("name", "Patient"),
+                        subject="Appointment Rescheduled",
+                        status="RESCHEDULED"
+                )
                 send_calendar_invite(
                         sender_email=os.getenv("GMAIL_SENDER_ADDRESS"),
                         sender_password=os.getenv("GMAIL_SENDER_PASSWORD"),
@@ -362,9 +470,9 @@ def execute_sql_query(query: str) -> dict:
         }
 
 @tool
-def insert_medical_record(full_name: str, role: str, patient_id: str, doctor_id: str, appointment_id: str, symptoms: list = None, diagnosis: str = None, prescriptions: list = None, tests: list = None, doctor_notes: str = None, vitals: dict = None, follow_up_date: str = None) -> dict:
+def insert_medical_record(full_name: str, role: str, patient_id: str, doctor_id: str, appointment_id: str, symptoms: list = None, diagnosis: str = None, prescriptions: list = None, tests: list = None, doctor_notes: str = None, vitals: dict = None, follow_up_date: str = None, upload_to_drive: bool = True) -> dict:
     """
-    Insert a medical record from a doctor's appointment with patient.
+    Insert a medical record from a doctor's appointment with patient and optionally upload to Google Drive as PDF.
     
     Args:
         full_name: Full name of the patient
@@ -379,6 +487,7 @@ def insert_medical_record(full_name: str, role: str, patient_id: str, doctor_id:
         doctor_notes: Additional notes from doctor
         vitals: Dictionary of vital signs (e.g., {"blood_pressure": "120/80", "heart_rate": 72})
         follow_up_date: ISO format date string for follow-up appointment
+        upload_to_drive: Boolean flag to upload PDF to Google Drive (default: True)
     
     Returns:
         Dictionary with success status and created record ID
@@ -415,14 +524,38 @@ def insert_medical_record(full_name: str, role: str, patient_id: str, doctor_id:
         
         # Insert into MongoDB
         result = medical_records_collection.insert_one(medical_record)
-        
-        return {
+        response = {
             "success": True,
             "message": "Medical record inserted successfully.",
             "record_id": str(result.inserted_id),
             "patient_id": patient_id,
             "created_at": medical_record["created_at"].isoformat()
         }
+        
+        # Optionally upload to Google Drive
+        if upload_to_drive:
+            print("📁 Uploading medical record to Google Drive...")
+            drive_result = upload_medical_record_to_drive(medical_record, patient_id, doctor_id)
+            
+            if drive_result["success"]:
+                response["drive_upload"] = {
+                    "success": True,
+                    "file_id": drive_result.get("file_id"),
+                    "file_url": drive_result.get("file_url"),
+                    "folder_id": drive_result.get("folder_id"),
+                    "file_name": drive_result.get("file_name"),
+                    "message": drive_result.get("message")
+                }
+                print(f"✅ Medical record uploaded to Drive: {drive_result.get('file_url')}")
+            else:
+                response["drive_upload"] = {
+                    "success": False,
+                    "message": drive_result.get("message", "Failed to upload to Google Drive"),
+                    "error": "Google Drive upload failed but medical record was saved to MongoDB"
+                }
+                print(f"⚠️ Drive upload failed: {drive_result.get('message')}")
+        
+        return response
     
     except Exception as e:
         return {

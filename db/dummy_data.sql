@@ -512,8 +512,7 @@ VALUES ('f8d78b23-a5aa-4765-9dac-16410f0718cb', '610a79b0-56f1-4f87-8008-ed064c0
 
 select * from appointments;
 
-
-
+select * from users;
 SELECT id FROM doctors WHERE user_email = (SELECT email FROM users WHERE full_name = 'Dr. Sneha Sharma');
 
 select * from doctors;
@@ -522,3 +521,16 @@ select * from patients;
 select * from users;
 select * from feedback;
 select * from doctor_availability;
+select * from users;
+
+select * from appointments;
+INSERT INTO appointments (patient_id, doctor_id, appointment_at, duration_minutes, status, reason) 
+VALUES ('f8d78b23-a5aa-4765-9dac-16410f0718cb', '1d0cfd68-32d1-445d-8cd8-768539379728', '2023-10-03 12:30:00', 30, 'scheduled', 'Consultation')
+
+select * from appointments;
+
+INSERT INTO appointments (patient_id, doctor_id, appointment_at, duration_minutes, status, reason) 
+VALUES ('f8d78b23-a5aa-4765-9dac-16410f0718cb', '1d0cfd68-32d1-445d-8cd8-768539379728', '2026-03-31 15:00:00', 30, 'scheduled', 'Consultation');
+
+
+
