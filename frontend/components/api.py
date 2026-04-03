@@ -1,3 +1,4 @@
+
 """API client module for backend communication."""
 from typing import Any, Dict, List, Optional
 
@@ -290,80 +291,5 @@ def update_queue_appointment_status(appointment_id: str, status: str) -> bool:
         st.error(data.get("message", "Update failed"))
         return False
     return True
-
-
-# ─── Speech-to-Text & Text-to-Speech ────────────────────────────
-
-def transcribe_audio(audio_bytes: bytes, filename: str = "audio.wav") -> Optional[str]:
-    """
-    Convert audio bytes to text using OpenAI Whisper.
-    
-    Parameters
-    ----------
-    audio_bytes : bytes
-        Raw audio file bytes
-    filename : str
-        Filename with extension (used for format detection)
-    
-    Returns
-    -------
-    str or None
-        Transcribed text or None on error
-    """
-
-    
-    try:
-        files = {"audio": (filename, audio_bytes, "audio/wav")}
-        response = httpx.request(
-            "POST",
-            f"{BACKEND_URL}/transcribe",
-            files=files,
-            timeout=30,
-        )
-        
-        if response.status_code == 200:
-            data = response.json()
-            return data.get("text", "").strip()
-        else:
-            st.error(f"❌ Transcription failed: {response.json().get('detail', response.text)}")
-            return None
-    except Exception as e:
-        st.error(f"❌ Transcription error: {str(e)}")
-        return None
-
-
-def text_to_speech(text: str, voice: str = "alloy") -> Optional[bytes]:
-    """
-    Convert text to speech audio using OpenAI TTS.
-    
-    Parameters
-    ----------
-    text : str
-        Text to convert to speech
-    voice : str
-        Voice name: 'alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'
-    
-    Returns
-    -------
-    bytes or None
-        Audio MP3 bytes or None on error
-    """
-    
-    try:
-        response = httpx.request(
-            "POST",
-            f"{BACKEND_URL}/tts",
-            json={"text": text, "voice": voice},
-            timeout=30,
-        )
-        
-        if response.status_code == 200:
-            return response.content
-        else:
-            st.error(f"❌ Text-to-speech failed: {response.json().get('detail', response.text)}")
-            return None
-    except Exception as e:
-        st.error(f"❌ Text-to-speech error: {str(e)}")
-        return None
 
 

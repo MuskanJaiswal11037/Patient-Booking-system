@@ -7,23 +7,51 @@ from .database_handler import db_handler
 def extract_appointments_data(
     doctor_email: Optional[str], status: Optional[str]
 ) -> dict:
-    query = "SELECT * FROM appointments"
+    query = """
+    SELECT 
+        a.id,
+        a.patient_id,
+        a.doctor_id,
+        a.appointment_at,
+        a.duration_minutes,
+        a.status,
+        a.reason,
+        a.notes,
+        a.cancelled_by,
+        a.cancelled_at,
+        a.cancel_reason,
+        a.criticality_level,
+        a.created_at,
+        a.updated_at,
+        up.full_name AS patient_name,
+        ud.full_name AS doctor_name,
+        p.user_email AS patient_email,
+        d.user_email AS doctor_email
+    FROM appointments a
+    JOIN patients p ON p.id = a.patient_id
+    JOIN users up ON up.email = p.user_email
+    LEFT JOIN doctors d ON d.id = a.doctor_id
+    LEFT JOIN users ud ON ud.email = d.user_email
+    """
     conditions: List[str] = []
     params: List[Any] = []
 
     if status != "All":
-        conditions.append("status = %s")
+        conditions.append("a.status = %s")
         params.append(status)
     if doctor_email is not None:
         query2 = "SELECT d.id FROM doctors d WHERE d.user_email = %s"
         res = db_handler.execute_query(query2, (doctor_email,))
         doctor_id = res[0]["id"] if res else None
         print(doctor_id)
-        conditions.append("doctor_id = %s")
+        conditions.append("a.doctor_id = %s")
         params.append(doctor_id)
+        conditions.append("DATE(a.appointment_at) = CURRENT_DATE")
 
     if conditions:
         query += " WHERE " + " AND ".join(conditions)
+
+    query += " ORDER BY a.appointment_at DESC"
 
     qparams = tuple(params) if len(params) > 1 else params
     result = db_handler.execute_query(query, qparams)
@@ -59,8 +87,30 @@ def update_status(appointment_id, status):
 
 def waiting_list_people():
     query = """
-        SELECT *
-        FROM appointments
+        SELECT 
+        a.id,
+        a.patient_id,
+        a.doctor_id,
+        a.appointment_at,
+        a.duration_minutes,
+        a.status,
+        a.reason,
+        a.notes,
+        a.cancelled_by,
+        a.cancelled_at,
+        a.cancel_reason,
+        a.criticality_level,
+        a.created_at,
+        a.updated_at,
+        up.full_name AS patient_name,
+        ud.full_name AS doctor_name,
+        p.user_email AS patient_email,
+        d.user_email AS doctor_email
+        FROM appointments a
+        JOIN patients p ON p.id = a.patient_id
+        JOIN users up ON up.email = p.user_email
+        LEFT JOIN doctors d ON d.id = a.doctor_id
+        LEFT JOIN users ud ON ud.email = d.user_email
         WHERE status IN ('scheduled', 'rescheduled')
           AND appointment_at <= NOW()
           AND appointment_at <= NOW()
@@ -78,7 +128,6 @@ def waiting_list_people():
         "availability": rows,
     }
 
-
 # criticality_level: 0 = EMERGENCY, 1 = NORMAL (schema CHECK 0..1)
 _EMERGENCY_LEVEL = 0
 
@@ -92,6 +141,7 @@ def list_emergency_appointments() -> dict:
         JOIN patients p ON p.id = a.patient_id
         JOIN users up ON up.email = p.user_email
         WHERE a.criticality_level = %s 
+
           AND a.status IN ('pending', 'scheduled', 'in-progress')
         ORDER BY a.appointment_at ASC NULLS LAST, a.created_at ASC
     """

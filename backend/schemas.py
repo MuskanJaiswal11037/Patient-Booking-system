@@ -84,6 +84,7 @@ class AppointmentOut(BaseModel):
     status:          str
     reason:          Optional[str]
     cancel_reason:   Optional[str]
+    drive_link:      Optional[str] = None
 
     class Config:
         from_attributes = True

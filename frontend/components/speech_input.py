@@ -2,47 +2,12 @@
 import streamlit as st
 import base64
 from io import BytesIO
-
-
-def render_audio_recorder():
-    """
-    Render an audio recording widget using Streamlit.
-    
-    Returns
-    -------
-    bytes or None
-        Raw audio bytes if recording exists, None otherwise
-    """
-    if "audio_data" not in st.session_state:
-        st.session_state.audio_data = None
-    
-    col1, col2 = st.columns([5, 2])
-    
-    with col1:
-        # Streamlit's built-in audio_input (requires Python 3.8+)
-        audio_bytes = st.audio_input(
-            label="🎤 Record your message",
-            label_visibility="collapsed"
-        )
-        
-        if audio_bytes:
-            st.session_state.audio_data = audio_bytes
-            return audio_bytes
-    
-    
-    # with col2:
-    #     # Clear button
-    #     if st.session_state.audio_data is not None:
-    #         if st.button("🗑️ Clear"):
-    #             st.session_state.audio_data = None
-    #             st.rerun()
-    
-    return st.session_state.audio_data
+import time
 
 
 def play_audio(audio_bytes: bytes, autoplay: bool = False):
     """
-    Play audio using Streamlit's audio player.
+    Play audio using Streamlit's audio player with autoplay support.
     
     Parameters
     ----------
@@ -51,8 +16,39 @@ def play_audio(audio_bytes: bytes, autoplay: bool = False):
     autoplay : bool
         Whether to autoplay the audio
     """
+    print(f"DEBUG: play_audio called with autoplay={autoplay}, audio_bytes size={len(audio_bytes) if audio_bytes else 0}")
+    
     if audio_bytes:
-        st.audio(audio_bytes, format="audio/mp3")
+        print(f"DEBUG: Audio bytes exist, autoplay={autoplay}")
+        if autoplay:
+            print("DEBUG: Autoplay is True, rendering HTML audio")
+            # Initialize audio playing state
+            if "audio_playing" not in st.session_state:
+                st.session_state.audio_playing = True
+            
+            # Use HTML5 audio with autoplay for automatic playback
+            b64 = base64.b64encode(audio_bytes).decode()
+            
+            # Create unique ID using timestamp
+            audio_id = f"audio_{int(time.time() * 1000000)}"
+            
+            html_audio = f'''
+            <audio id="{audio_id}" autoplay preload="auto" controls style="width: 100%;">
+                <source src="data:audio/mp3;base64,{b64}" type="audio/mpeg">
+                Your browser does not support the audio element.
+            </audio>
+            <script>
+                var audio = document.getElementById("{audio_id}");
+                audio.onended = function() {{
+                    window.parent.postMessage({{"type": "streamlit:setComponentValue", "value": {{"audio_ended": true}}}}, "*");
+                }};
+            </script>
+            '''
+            st.markdown(html_audio, unsafe_allow_html=True)
+            return True
+        else:
+            st.audio(audio_bytes, format="audio/mp3")
+            return False
 
 
 def render_text_to_speech_button(text: str, key_suffix: str = None) -> bool:

@@ -530,7 +530,14 @@ VALUES ('f8d78b23-a5aa-4765-9dac-16410f0718cb', '1d0cfd68-32d1-445d-8cd8-7685393
 select * from appointments;
 
 INSERT INTO appointments (patient_id, doctor_id, appointment_at, duration_minutes, status, reason) 
-VALUES ('f8d78b23-a5aa-4765-9dac-16410f0718cb', '1d0cfd68-32d1-445d-8cd8-768539379728', '2026-03-31 15:00:00', 30, 'scheduled', 'Consultation');
+VALUES ('f8d78b23-a5aa-4765-9dac-16410f0718cb', '1d0cfd68-32d1-445d-8cd8-768539379728', '2026-04-6 15:00:00', 30, 'scheduled', 'Consultation');
+
+UPDATE appointments 
+SET status = 'scheduled', appointment_at = '2026-04-04 09:30:00' 
+WHERE id = '225c6fd1-917c-4b97-8572-f67686012372';
+
+select * from appointments;
+
 
 
 

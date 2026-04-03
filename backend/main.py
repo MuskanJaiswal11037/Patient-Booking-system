@@ -12,6 +12,7 @@ Routes:
   GET   /doctor/appointments     (doctor's schedule)
 """
 from datetime import datetime
+from openai import OpenAI
 from typing import Annotated, Optional
 from fastapi import Body, FastAPI, Depends, HTTPException, status, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -19,7 +20,7 @@ from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.orm import Session
-
+import numpy as np
 from backend.utils import queue_management_data
 from backend.database import get_db, engine, Base
 from backend.models import (User, Doctor, Patient, Appointment,
@@ -81,39 +82,6 @@ async def register(body: RegisterRequest, db: Session = Depends(get_db)):
     db.commit()
     return {"message": "Registered successfully", "role": "patient"}
 
-# @app.post("/auth/login", response_model=TokenResponse)
-# async def login(
-#     form: OAuth2PasswordRequestForm = Depends(),
-#     db: AsyncSession = Depends(get_db),
-# ):
-#     from backend.auth import verify_password
-    
-#     result = await db.execute(select(User).where(User.email == form.username))
-#     user = result.scalar_one_or_none()
-    
-#     # If user doesn't exist, create a default user (skip password validation for auto-create)
-#     if not user:
-#         user = User(
-#             email=form.username,
-#             password_hash="",  # Skip password hashing for test user
-#             full_name=form.username.split("@")[0],
-#             role=form.role if hasattr(form, "role") else "patient",  # Default to patient role
-#             is_active=True,
-#         )
-#         db.add(user)
-#         await db.flush()
-        
-#         # Create patient profile for the default user
-#         db.add(Patient(user_id=user.id))
-#         await db.commit()
-#     else:
-#         # For existing users with non-empty password, verify it
-#         if user.password_hash and not verify_password(form.password, user.password_hash):
-#             raise HTTPException(status_code=401, detail="Invalid credentials")
-
-#     token = create_access_token({"sub": user.id, "role": user.role})
-#     return TokenResponse(access_token=token, role=user.role,
-#                          full_name=user.full_name, user_id=user.id)
 
 
 @app.post("/auth/check-or-insert-user", response_model=isRegisteredResponse)
@@ -225,7 +193,6 @@ async def queue_doctors():
     )
 
 
-
 @app.post("/create_emergency_appointment_quick", response_model=QueueManagementResponse)
 async def create_emergency_appointment_quick(body: CreateEmergencyQuickRequest):
     result = queue_management_data.create_emergency_appointment_now(
@@ -259,10 +226,10 @@ async def chat(
     # )
     # patient = result.scalar_one_or_none()
 
-    from types import SimpleNamespace
-    patient = SimpleNamespace(id=user.id)    
-    if not patient:
-        raise HTTPException(400, "Patient profile not found")
+    # from types import SimpleNamespace
+    # patient = SimpleNamespace(id=user.id)    
+    # if not patient:
+    #     raise HTTPException(400, "Patient profile not found")
     
     
     user_role = db.execute(select(User.role).where(User.email == user.email)).scalar_one_or_none()
@@ -288,6 +255,10 @@ async def chat(
 
 
 
+def is_silent(audio_bytes, threshold=350):
+    audio_array = np.frombuffer(audio_bytes, dtype=np.int16)
+    return np.abs(audio_array).mean() < threshold
+
 @app.post("/transcribe")
 async def transcribe_audio(
     audio: UploadFile = File(...),
@@ -300,18 +271,18 @@ async def transcribe_audio(
     if not settings.OPENAI_API_KEY:
         raise HTTPException(status_code=503, detail="OPENAI_API_KEY not configured")
  
-    try:
-        from openai import OpenAI
-        client = OpenAI(api_key=settings.OPENAI_API_KEY)
- 
+    try: 
         # Read the uploaded audio bytes
         audio_bytes = await audio.read()
         if len(audio_bytes) < 100:
             raise HTTPException(status_code=400, detail="Audio file is too small or empty")
+        
+        if is_silent(audio_bytes):
+            return {"text": ""}  # skip transcription
  
         # Whisper needs a filename with extension for format detection
         filename = audio.filename or "audio.wav"
- 
+        client = OpenAI(api_key=settings.OPENAI_API_KEY)
         transcript = client.audio.transcriptions.create(
             model="whisper-1",
             file=(filename, audio_bytes),

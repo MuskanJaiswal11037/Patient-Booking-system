@@ -221,4 +221,4 @@ if page:
             st.info("👈 Please login or register to get started.")
 else:
     # No page selected (not logged in)
-    st.info("👈 If loggged in then please navigate  else login/register to get started.")
+    st.info("👈 If loggged in then please navigate to book via chat or view queue real-time status; otherwise register to get started.")

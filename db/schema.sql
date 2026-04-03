@@ -75,13 +75,12 @@ CREATE TABLE IF NOT EXISTS doctor_availability (
 );
 
 
-drop table appointments;
 -- ──────────────────────────────────────────────────────────────
 -- 5. APPOINTMENTS
 -- ──────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS appointments (
     id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    patient_id      UUID NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
+    patient_id      UUID REFERENCES patients(id) ON DELETE CASCADE,
     doctor_id       UUID REFERENCES doctors(id) ON DELETE CASCADE,
     appointment_at  TIMESTAMPTZ NOT NULL,
     duration_minutes INT DEFAULT 15,
@@ -92,6 +91,7 @@ CREATE TABLE IF NOT EXISTS appointments (
     cancelled_by    VARCHAR(255) REFERENCES users(email),
     cancelled_at    TIMESTAMPTZ,
     cancel_reason   TEXT,
+    drive_link      VARCHAR(500),
     criticality_level INT DEFAULT 1 CHECK (criticality_level BETWEEN 0 AND 1),
     criticality_level INT DEFAULT 1 CHECK (criticality_level BETWEEN 0 AND 1),
     created_at      TIMESTAMPTZ DEFAULT NOW(),
@@ -121,7 +121,6 @@ DECLARE
     v_end_time TIME;
     v_day_of_week INT;
     v_count INT;
-    v_count INT;
 BEGIN
     -- Extract day of week from appointment_at
     v_day_of_week := EXTRACT(DOW FROM NEW.appointment_at);
@@ -140,40 +139,29 @@ BEGIN
         
     -- Check if appointment time falls within available hours
     IF NEW.appointment_at::TIME < v_start_time OR NEW.appointment_at::TIME > v_end_time THEN
-    IF NEW.appointment_at::TIME < v_start_time OR NEW.appointment_at::TIME > v_end_time THEN
         RAISE EXCEPTION 'Appointment time % is not within doctor''s available hours (% to %)',
                 NEW.appointment_at::TIME, v_start_time, v_end_time;
     END IF;
 
-    -- IF NEW.appointment_at < NOW() THEN
-    --     RAISE EXCEPTION 'Appointment time cannot be in the past.';
-    -- END IF;
-    -- IF NEW.appointment_at < NOW() THEN
-    --     RAISE EXCEPTION 'Appointment time cannot be in the past.';
-    -- END IF;
     
     IF NEW.appointment_at::TIME >= TIME '13:00:00'
         AND NEW.appointment_at::TIME < TIME '13:30:00' THEN
         RAISE EXCEPTION 'Appointments are not allowed between 1:00 PM and 1:30 PM (lunch break).';
     END IF;
 
-    -- ✅ Check max 2 appointments at same time
-    SELECT COUNT(*) INTO v_count
-    FROM appointments
-    WHERE appointment_at = NEW.appointment_at and doctor_id = NEW.doctor_id;
+        -- ✅ Overlapping appointments check (max 2 allowed)
+        SELECT COUNT(*) INTO v_count
+        FROM appointments a
+        WHERE a.doctor_id = NEW.doctor_id
+        AND a.status = 'scheduled'
+        AND (
+                NEW.appointment_at >= a.appointment_at AND 
+                NEW.appointment_at < (a.appointment_at + INTERVAL '15 minutes')
+        );
 
-    IF v_count >= 2 THEN
-        RAISE EXCEPTION 'More than 2 appointments not allowed at same time.';
-    END IF;
-    -- ✅ Check max 2 appointments at same time
-    SELECT COUNT(*) INTO v_count
-    FROM appointments
-    WHERE appointment_at = NEW.appointment_at and doctor_id = NEW.doctor_id;
-
-    IF v_count >= 2 THEN
-        RAISE EXCEPTION 'More than 2 appointments not allowed at same time.';
-    END IF;
-
+        IF v_count >= 2 THEN
+            RAISE EXCEPTION 'Max 2 overlapping appointments reached.';
+        END IF;
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
@@ -182,7 +170,7 @@ $$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS appointment_slot_validation ON appointments;
 CREATE TRIGGER appointment_slot_validation
-BEFORE INSERT OR UPDATE ON appointments
+BEFORE INSERT ON appointments
 FOR EACH ROW EXECUTE FUNCTION validate_appointment_slot();
 
 

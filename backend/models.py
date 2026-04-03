@@ -83,6 +83,7 @@ class Appointment(Base):
     cancelled_by     = Column(String(255), ForeignKey("users.email"), nullable=True)
     cancelled_at     = Column(DateTime(timezone=True), nullable=True)
     cancel_reason    = Column(Text)
+    drive_link       = Column(String(500), nullable=True)
     created_at       = Column(DateTime(timezone=True), default=datetime.utcnow)
     updated_at       = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
     is_confirmed     = Column(Boolean, default=False)

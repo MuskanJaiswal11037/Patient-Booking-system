@@ -3,7 +3,6 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 from datetime import datetime, date
-from datetime import datetime, date
 from typing import Optional, Dict, List, Tuple, Any
 from components.api import (
     get_appointment_details,
@@ -13,18 +12,7 @@ from components.api import (
     get_queue_doctors,
     create_emergency_appointment_quick,
 )
-from components.api import (
-    get_appointment_details,
-    update_queue_appointment_status,
-    get_waiting_list,
-    get_emergency_appointments,
-    get_queue_doctors,
-    create_emergency_appointment_quick,
-)
 from components.utils import get_state_manager
-from streamlit_autorefresh import st_autorefresh
-
-
 from streamlit_autorefresh import st_autorefresh
 
 
@@ -173,10 +161,16 @@ def get_status_color(status: str) -> str:
 @st.cache_data(ttl=10)
 def _appointments_df_cached(doctor_email: str, status_key: str) -> pd.DataFrame:
     rows = get_appointment_details(
-        doctor_email=None,
-        status=status_key or None,
+        doctor_email= None,
+        status="All",
     )
     df = pd.DataFrame(rows)
+    if df.empty:
+        return df
+    if status_key != "All":
+        df = df[df["status"] == status_key]
+    if doctor_email:
+        df = df[df["doctor_email"] == doctor_email]
     return df;
 
 
@@ -225,7 +219,7 @@ def get_queue_stats(doctor_email: str) -> Dict[str, int]:
         "scheduled": int((df["status"] == "scheduled").sum()) if "status" in df else 0,
         "in_progress": int((df["status"] == "in-progress").sum()) if "status" in df else 0,
         "completed": int((df["status"] == "completed").sum()) if "status" in df else 0,
-        "no_show": int((df["status"] == "no-show").sum()) if "status" in df else 0,
+        "no_show": int((df["status"] == "no_show").sum()) if "status" in df else 0,
         "cancelled": int((df["status"] == "cancelled").sum()) if "status" in df else 0,
     }
 
@@ -253,8 +247,176 @@ def get_avg_wait_time(doctor_email: str) -> int:
     return int(sum(mins) / len(mins)) if mins else 0
 
 
+def analyze_busiest_doctor() -> Dict[str, Any]:
+    """
+    Analyze and identify the busiest doctor based on multiple metrics.
+    
+    Returns:
+        Dictionary containing:
+        - busiest_doctor: Doctor with most appointments
+        - doctors_analysis: List of doctors with their metrics
+        - avg_workload: Average appointments per doctor
+    """
+    df = get_appointments_cached("", "All")
+    
+    if df.empty:
+        return {
+            "success": False,
+            "message": "No appointment data available",
+            "busiest_doctor": None,
+            "doctors_analysis": [],
+            "avg_workload": 0
+        }
+    
+    # Group by doctor to get appointment counts
+    doctor_stats = df.groupby("doctor_email").agg({
+        "id": "count",
+        "doctor_name": "first",
+        "status": lambda x: x.value_counts().to_dict()
+    }).reset_index()
+    
+    doctor_stats.columns = ["doctor_email", "total_appointments", "doctor_name", "status_breakdown"]
+    
+    # Calculate additional metrics per doctor
+    doctors_analysis = []
+    for _, row in doctor_stats.iterrows():
+        doctor_email = row["doctor_email"]
+        doctor_df = df[df["doctor_email"] == doctor_email]
+        
+        # Count patients (unique)
+        unique_patients = doctor_df["patient_id"].nunique() if "patient_id" in doctor_df.columns else 0
+        
+        # Completed appointments
+        completed = len(doctor_df[doctor_df["status"] == "completed"]) if "status" in doctor_df.columns else 0
+        
+        # In progress
+        in_progress = len(doctor_df[doctor_df["status"] == "in-progress"]) if "status" in doctor_df.columns else 0
+        
+        # Calculate average wait time for this doctor
+        avg_wait = get_avg_wait_time(doctor_email)
+        
+        # Busiest hour
+        if "appointment_at" in doctor_df.columns:
+            doctor_df_copy = doctor_df.copy()
+            doctor_df_copy["hour"] = pd.to_datetime(doctor_df_copy["appointment_at"], errors="coerce").dt.hour
+            busiest_hour = doctor_df_copy["hour"].mode()[0] if not doctor_df_copy["hour"].mode().empty else None
+        else:
+            busiest_hour = None
+        
+        doctor_info = {
+            "doctor_email": doctor_email,
+            "doctor_name": row["doctor_name"],
+            "total_appointments": int(row["total_appointments"]),
+            "unique_patients": unique_patients,
+            "completed_appointments": completed,
+            "in_progress_appointments": in_progress,
+            "average_wait_time_minutes": avg_wait,
+            "busiest_hour": busiest_hour,
+            "efficiency_score": round((completed / row["total_appointments"] * 100), 2) if row["total_appointments"] > 0 else 0
+        }
+        doctors_analysis.append(doctor_info)
+    
+    # Sort by total appointments (descending)
+    doctors_analysis.sort(key=lambda x: x["total_appointments"], reverse=True)
+    
+    # Get busiest doctor
+    busiest_doctor = doctors_analysis[0] if doctors_analysis else None
+    
+    # Calculate average workload
+    avg_workload = round(df.groupby("doctor_email").size().mean(), 2)
+    
+    return {
+        "success": True,
+        "busiest_doctor": busiest_doctor,
+        "doctors_analysis": doctors_analysis,
+        "avg_workload": avg_workload
+    }
+
+def _render_busiest_doctor_analysis() -> None:
+    """Render busiest doctor analysis dashboard."""
+    st.markdown("### 👨‍⚕️ Doctor Workload Analysis")
+    
+    analysis = analyze_busiest_doctor()
+    
+    if not analysis["success"]:
+        st.warning(analysis.get("message", "No data available"))
+        return
+    
+    # Display key metrics
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.metric("📊 Avg Workload", f"{analysis['avg_workload']} appts")
+    with col2:
+        st.metric("👨‍⚕️ Total Doctors", len(analysis['doctors_analysis']))
+    
+    st.divider()
+    
+    # Busiest Doctor Highlight
+    if analysis["busiest_doctor"]:
+        busiest = analysis["busiest_doctor"]
+        st.markdown(f"#### 👨‍⚕️ Busiest Doctor: {busiest['doctor_name']}")
+        
+        col1, col2, col3, col4, col5 = st.columns(5)
+        with col1:
+            st.metric("Total Appts", busiest["total_appointments"])
+        with col2:
+            st.metric("Unique Patients", busiest["unique_patients"])
+        with col3:
+            st.metric("Completed", busiest["completed_appointments"])
+        with col4:
+            st.metric("In Progress", busiest["in_progress_appointments"])
+        with col5:
+            st.metric("Efficiency %", f"{busiest['efficiency_score']}%")
+        
+        if busiest["average_wait_time_minutes"] > 0:
+            st.info(f"⏱️ Average Wait Time: {busiest['average_wait_time_minutes']} minutes")
+        
+        # if busiest["busiest_hour"]:
+        #     st.info(f"⏰ Peak Hour: {busiest['busiest_hour']:02d}:00")
+    
+    st.divider()
+    
+    # Doctor comparison chart
+    st.markdown("#### 📊 Doctor Comparison")
+    
+    doctors_df = pd.DataFrame(analysis["doctors_analysis"])
+    
+    if not doctors_df.empty:
+        
+        # Efficiency score comparison
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            fig2 = px.bar(
+                doctors_df.sort_values("efficiency_score", ascending=False),
+                x="doctor_name",
+                y="efficiency_score",
+                title="Efficiency Score (% Completed)",
+                color="efficiency_score",
+                color_continuous_scale="Greens",
+                labels={"efficiency_score": "Efficiency %", "doctor_name": "Doctor"}
+            )
+            fig2.update_layout(height=400)
+            st.plotly_chart(fig2, use_container_width=True)
+        with col2:
+            # Workload comparison
+            fig1 = px.bar(
+                doctors_df.sort_values("total_appointments", ascending=False),
+                x="doctor_name",
+                y="total_appointments",
+                title="Total Appointments per Doctor",
+                color="total_appointments",
+                color_continuous_scale="Blues",
+                labels={"total_appointments": "Appointments", "doctor_name": "Doctor"}
+            )
+            fig1.update_layout(height=400)
+            st.plotly_chart(fig1, use_container_width=True)
+
+
 
 def _render_overview_tab(doctor_email: str) -> None:
+    st.subheader("📈 Appointments Overview")
     stats = get_queue_stats(doctor_email)
     avg_wait = get_avg_wait_time(doctor_email)
 
@@ -270,7 +432,7 @@ def _render_overview_tab(doctor_email: str) -> None:
     with col5:
         st.metric("🔴 No Show", stats["no_show"])
     with col6:
-        st.metric("⚪ CANCELLED", stats.get("cancelled", 0))
+        st.metric("⚪ CANCELLED", stats["cancelled"])
 
     st.divider()
     col1, col2 = st.columns(2)
@@ -278,14 +440,15 @@ def _render_overview_tab(doctor_email: str) -> None:
         fig = go.Figure(
             data=[
                 go.Pie(
-                    labels=["Scheduled", "In Progress", "Completed", "No Show"],
+                    labels=["Scheduled", "In Progress", "Completed", "No Show", "CANCELLED"],
                     values=[
                         stats["scheduled"],
                         stats["in_progress"],
                         stats["completed"],
                         stats["no_show"],
+                        stats["cancelled"]
                     ],
-                    marker=dict(colors=["#667eea", "#ffc107", "#28a745", "#dc3545"]),
+                    marker=dict(colors=["#667eea", "#ffc107", "#28a745", "#dc3545", "#fff5f5e9"]),
                 )
             ]
         )
@@ -308,9 +471,13 @@ def _render_overview_tab(doctor_email: str) -> None:
             fig.update_layout(height=400)
             st.plotly_chart(fig, use_container_width=True)
 
+    st.divider()
+    _render_busiest_doctor_analysis()
+
     if st.button("🔄 Refresh All Data", key="refresh_overview_tab"):
         st.cache_data.clear()
         st.rerun()
+
 
 
 def _render_update_appointments_tab(user, doctor_email: str) -> None:
@@ -320,7 +487,7 @@ def _render_update_appointments_tab(user, doctor_email: str) -> None:
     with col1:
         status_filter = st.selectbox(
             "Status",
-            ["All", "scheduled", "in-progress", "completed", "no-show"],
+            ["All", "scheduled", "in-progress", "completed", "no_show", "cancelled"],
             key="upd_appt_status",
         )
     with col2:
@@ -340,11 +507,11 @@ def _render_update_appointments_tab(user, doctor_email: str) -> None:
 
                 with col1:
                     # st.write(f"**#{row['queue_position']} - {row['patient_name']}**")
-                    st.write(f"📧Patient Id: {row['patient_id'] or 'N/A'}")
+                    st.write(f"� Patient: {row.get('patient_name') or row['patient_id'] or 'N/A'}")
 
                 with col2:
                     st.write(f"⏰ {row['appointment_at']}")
-                    st.write(f"👨‍⚕️ Doctor ID:  {row['doctor_id']}")
+                    st.write(f"👨‍⚕️ Doctor: {row.get('doctor_name') or row.get('doctor_id') or 'N/A'}")
 
 
                 with col4:
@@ -399,7 +566,6 @@ def _render_live_queue_tab(doctor_email: str) -> None:
         return
 
     waiting = get_waiting_list()
-    print("++++++++++++++++" , waiting)
     if waiting:
         waiting = pd.DataFrame(waiting)
     else:
@@ -421,9 +587,9 @@ def _render_live_queue_tab(doctor_email: str) -> None:
         for i, (_, row) in enumerate(waiting.head(15).iterrows(), 1):
             c1, c2, c3 = st.columns([2, 2.5, 0.5])
             with c1:
-                st.write(f"**#{i}. Patient Id:  {row['patient_id']}**")
+                st.write(f"**#{i}. Patient: {row.get('patient_name') }**")
             with c2:
-                st.write(f"⏰ {row['appointment_at']} | 👨‍⚕️ {row['doctor_id']}")
+                st.write(f"⏰ {row['appointment_at']} | 👨‍⚕️ {row.get('doctor_name') or row.get('doctor_id')}")
             with c3:
                 if st.button("→", key=f"next_{row['id']}", help="Call next"):
                     success, _ = update_appointment_status(row["id"], "in-progress")
@@ -441,7 +607,7 @@ def _render_live_queue_tab(doctor_email: str) -> None:
         for _, row in serving.iterrows():
             col1, col2 = st.columns([3, 1])
             with col1:
-                st.write(f"**{row['patient_id']}** - 👨‍⚕️ {row['doctor_id']}")
+                st.write(f"**{row.get('patient_name') or row['patient_id']}** - 👨‍⚕️ {row.get('doctor_name') or row.get('doctor_id')}")
                 # st.caption(f"Since {row['checkin_time']}")
             with col2:
                 if st.button("✓ Done", key=f"done_{row['id']}"):
@@ -567,95 +733,8 @@ def _queue_doctors_picklist_cached() -> List[Dict[str, Any]]:
     docs = get_queue_doctors()
     return docs if docs else []
 
-def _render_emergency_tab() -> None:
-    st.subheader("Emergency cases")
-    st.caption(
-        "Create **emergency** slots (criticality 0): time is stored as **database NOW()**. "
-        "Patient must already be registered."
-    )
-    if st.button("Refresh emergency list", key="refresh_emergency_tab"):
-        st.cache_data.clear()
-        st.rerun()
-
-    doctors = _queue_doctors_picklist_cached()
-    email_labels = {d["user_email"]: f"{d['full_name']} — {d['specialty']}" for d in doctors}
-    doctor_emails = [d["user_email"] for d in doctors]
-
-    with st.expander("Create emergency appointment", expanded=True):
-        with st.form("form_emergency_quick", clear_on_submit=True):
-            eq_patient = st.text_input(
-                "Patient email *",
-                key="emq_patient",
-                help="Must match `patients.user_email`.",
-            )
-            eq_reason = st.text_area("Reason *", key="emq_reason", height=72)
-            eq_doc_email = st.text_input(
-                "Doctor email(Assigned)",
-                key="emq_doc_email",
-                help="Leave blank to create the emergency case without assigning a doctor yet.",
-            )
-            st.write(" ")
-            eq_patient_name = st.text_input(
-                "Patient name ",
-                key="emq_patient_name",
-                help="Used for convenience; appointment creation still uses patient email to find the patient record.",
-            )
-            st.caption("Appointment time is set automatically on the server (SQL `NOW()`).")
-            eq_submit = st.form_submit_button("Create emergency appointment")
-
-        if eq_submit:
-            if not (eq_patient or "").strip():
-                st.warning("Patient email is required.")
-            elif not (eq_reason or "").strip():
-                st.warning("Reason is required.")
-            else:
-                dem = (eq_doc_email or "").strip() or None
-                pem = (eq_patient_name or "").strip() or None
-                if create_emergency_appointment_quick(
-                    patient_email= eq_patient.strip(),
-                    reason=eq_reason.strip(),
-                    doctor_email=dem,
-                    patient_name = pem
-                ):
-                    st.success("Emergency appointment created.")
-                    st.cache_data.clear()
-                    st.rerun()
-
-    st.divider()
-    st.markdown("**Active emergency cases Pending**")
-
-    df = _emergency_appointments_df_cached()
-
-    if not doctors and not df.empty:
-        st.warning("No doctors registered yet—assignments below need doctors in the system.")
-
-    if df.empty:
-        st.info("No active emergency appointments.")
-    else:
-        for _, row in df.iterrows():
-            aid = row.get("id")
-            pid = row.get("patient_id")
-            cur_doc = row.get("doctor_id")
-            with st.container(border=True):
-                c1, c2, c3 = st.columns([2, 2, 2])
-                with c1:
-                    patient_name = row.get("patient_name") or pid
-                    st.write(f"**Patient** `{patient_name}`")
-                    st.caption(f"Case ID: `{aid}`")
-                with c2:
-                    st.write(f"⏰ {row.get('appointment_at')}")
-                    st.write(
-                        f"**{row.get('status')}** · Assigned doctor id: `{cur_doc if pd.notna(cur_doc) and cur_doc else '—'}`"
-                    )
-                    if row.get("reason"):
-                        st.caption(str(row.get("reason"))[:280])
-                
-
-
 def page_dashboard():
     """Queue management: Overview, Update Appointments, Live Queue."""
-    st_autorefresh(interval=300000, key="datarefresh")
-
     st_autorefresh(interval=300000, key="datarefresh")
 
     _apply_queue_page_styles()
@@ -688,7 +767,7 @@ def page_dashboard():
     )
 
     with tab_overview:
-        _render_overview_tab(doctor_email)
+        _render_overview_tab("")
 
     with tab_update:
         _render_update_appointments_tab(st.session_state.get("user"), doctor_email)
@@ -699,8 +778,6 @@ def page_dashboard():
     with tab_emergency:
         _render_emergency_tab()
 
-    with tab_emergency:
-        _render_emergency_tab()
 
 
 def page_appointments(user):

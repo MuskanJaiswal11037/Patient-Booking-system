@@ -19,69 +19,87 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import inch
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
 from reportlab.lib import colors
+import pickle
 
 
 # Google Drive API scope
 SCOPES = ['https://www.googleapis.com/auth/drive.file']
 
+def make_public(service, file_id):
+    permission = {
+        'type': 'anyone',
+        'role': 'reader'
+    }
+    service.permissions().create(
+        fileId=file_id,
+        body=permission
+    ).execute()
+    print("✅ File is now public")
 
-def get_drive_service():
-    """
-    Get Google Drive service using environment variables for authentication.
+def get_or_create_folder(service, folder_name, parent_folder_id=None):
+    """Get folder ID by name, or create it if it doesn't exist"""
+
+    # Search for existing folder
+    query = f"name='{folder_name}' and mimeType='application/vnd.google-apps.folder' and trashed=false"
+    results = service.files().list(
+        q=query,
+        fields='files(id, name)'
+    ).execute()
+
+    folders = results.get('files', [])
+
+    if folders:
+        print(f"✅ Found existing folder: {folder_name}")
+        return folders[0]['id']
     
-    Supports:
-    1. Service account credentials from GOOGLE_SERVICE_ACCOUNT_JSON env variable
-    2. OAuth token from token.json file (if previously saved)
-    3. Falls back to installed app flow with client_secret.json if available
-    
-    Returns:
-        googleapiclient.discovery.Resource: Google Drive API service
-    """
-    try:
-        creds = None
-        
-        # 🔥 Step 1: Try service account credentials from environment variable
-        service_account_json = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON")
-        if service_account_json:
-            try:
-                service_account_info = json.loads(service_account_json)
-                creds = service_account.Credentials.from_service_account_info(
-                    service_account_info, scopes=SCOPES)
-                print("✅ Authenticated using service account credentials from environment")
-                service = build('drive', 'v3', credentials=creds)
-                return service
-            except Exception as e:
-                print(f"⚠️ Service account authentication failed: {str(e)}")
-        
-        # 🔥 Step 2: Try to load previously saved OAuth token
-        if os.path.exists('token.json'):
-            creds = Credentials.from_authorized_user_file('token.json', SCOPES)
-            if creds and creds.valid:
-                print("✅ Authenticated using saved token.json")
-                service = build('drive', 'v3', credentials=creds)
-                return service
-        
-        # # 🔥 Step 3: Try client_secret.json (configured in frontend folder)
-        # client_secret_path = 'frontend/client_secret.json'
-        # if os.path.exists(client_secret_path):
-        #     flow = InstalledAppFlow.from_client_secrets_file(
-        #         client_secret_path, SCOPES)
-        #     creds = flow.run_local_server(port=0)
-            
-        #     # Save credentials for future use
-        #     with open('token.json', 'w') as token:
-        #         token.write(creds.to_json())
-            
-        #     print("✅ Authenticated using client_secret.json OAuth flow")
-        #     service = build('drive', 'v3', credentials=creds)
-        #     return service
-        
-        print("❌ No authentication method available")
-        return None
-    
-    except Exception as e:
-        print(f"❌ Error initializing Google Drive service: {str(e)}")
-        return None
+    # Create folder if not found
+    folder_metadata = {
+        'name': folder_name,
+        'mimeType': 'application/vnd.google-apps.folder'
+    }
+    if parent_folder_id:
+        folder_metadata['parents'] = [parent_folder_id]
+
+    folder = service.files().create(
+        body=folder_metadata,
+        fields='id, name'
+    ).execute()
+    print(f"✅ Created folder: {folder_name}")
+    return folder['id']
+
+
+def make_public(service, file_id):
+    permission = {
+        'type': 'anyone',
+        'role': 'reader'
+    }
+    service.permissions().create(
+        fileId=file_id,
+        body=permission
+    ).execute()
+    print("✅ File is now public")
+
+
+def get_credentials():
+    creds = None
+
+    # Load saved token if exists
+    if os.path.exists('token.pickle'):
+        with open('token.pickle', 'rb') as token:
+            creds = pickle.load(token)
+
+    # Login if no valid credentials
+    if not creds or not creds.valid:
+        flow = InstalledAppFlow.from_client_secrets_file(
+            'backend\\utils\\oauth_credentials.json',   # download this from Google Cloud Console
+            SCOPES
+        )
+        creds = flow.run_local_server(port=0)
+
+        # Save token for next time
+        with open('token.pickle', 'wb') as token:
+            pickle.dump(creds, token)
+    return creds
 
 
 def create_medical_record_pdf(medical_record: dict) -> io.BytesIO:
@@ -217,13 +235,14 @@ def create_medical_record_pdf(medical_record: dict) -> io.BytesIO:
         return None
 
 
-def upload_medical_record_to_drive(medical_record: dict, patient_id: str, doctor_id: str) -> dict:
+def upload_medical_record_to_drive(medical_record: dict, appointment_id: str) -> dict:
     """
     Upload medical record as PDF to Google Drive in a patient-specific folder
     
     Args:
         medical_record: Dictionary containing medical record details
         patient_id: UUID of the patient
+        appointment_id: UUID of the appointment
         doctor_id: UUID of the doctor
     
     Returns:
@@ -236,44 +255,23 @@ def upload_medical_record_to_drive(medical_record: dict, patient_id: str, doctor
                 "folder_id": str (if successful)
             }
     """
-    try:
-        service = get_drive_service()
-        if not service:
-            return {
-                "success": False,
-                "message": "Failed to initialize Google Drive service"
-            }
-        
-        # Create or get patient folder
-        folder_name = f"Medical_Records_{patient_id}"
-        query = f"name='{folder_name}' and mimeType='application/vnd.google-apps.folder' and trashed=false"
-        
-        results = service.files().list(q=query, spaces='drive', pageSize=1, fields='files(id, name)').execute()
-        folders = results.get('files', [])
-        
-        if folders:
-            folder_id = folders[0]['id']
-        else:
-            # Create new folder
-            file_metadata = {
-                'name': folder_name,
-                'mimeType': 'application/vnd.google-apps.folder'
-            }
-            folder = service.files().create(body=file_metadata, fields='id').execute()
-            folder_id = folder.get('id')
-        
+    try:  
+        creds = get_credentials()
+        service = build('drive', 'v3', credentials=creds)
+
+    
+        folder_id = get_or_create_folder(service, 'MyMedPatientHistory')  # Change 'MyFolder' to your desired folder name         
         # Generate PDF
         pdf_buffer = create_medical_record_pdf(medical_record)
         if not pdf_buffer:
             return {
-                "success": False,
-                "message": "Failed to generate PDF"
+                    "success": False,
+                    "message": "Failed to generate PDF"
             }
-        
+                
         # Upload PDF to folder
         timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
-        file_name = f"Medical_Record_{patient_id}_{timestamp}.pdf"
-        
+        file_name = f"Medical_Record_{appointment_id}_{timestamp}.pdf"
         file_metadata = {
             'name': file_name,
             'parents': [folder_id]
@@ -281,9 +279,13 @@ def upload_medical_record_to_drive(medical_record: dict, patient_id: str, doctor
         
         media = MediaIoBaseUpload(pdf_buffer, mimetype='application/pdf', resumable=True)
         file = service.files().create(body=file_metadata, media_body=media, fields='id, webViewLink').execute()
+
+        print(f"✅ Uploaded!")
+        print(f"🔗 {file['webViewLink']}")
         
         file_id = file.get('id')
         file_url = file.get('webViewLink')
+        make_public(service, file_id)
         
         return {
             "success": True,
