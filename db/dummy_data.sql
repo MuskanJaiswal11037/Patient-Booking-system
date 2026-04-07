@@ -539,7 +539,7 @@ WHERE id = '225c6fd1-917c-4b97-8572-f67686012372';
 select *from doctors;
 select * from appointments;
 
-select * from doctor_availability where doctor_id = '610a79b0-56f1-4f87-8008-ed064c054f74';
+select * from doctor_availability;
 
 
 

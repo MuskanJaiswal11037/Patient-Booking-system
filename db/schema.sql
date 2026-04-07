@@ -135,7 +135,7 @@ DECLARE
     v_count INT;
 BEGIN
     -- Extract day of week from appointment_at
-    v_day_of_week := EXTRACT(DOW FROM NEW.appointment_at);
+    v_day_of_week := (EXTRACT(DOW FROM NEW.appointment_at)-1)%7;
     
     -- Get doctor's availability for this day
     SELECT start_time, end_time INTO v_start_time, v_end_time

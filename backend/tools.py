@@ -14,6 +14,7 @@ from .utils.drive_service import upload_medical_record_to_drive
 import datetime
 
 
+
 @tool
 def resolve_user_identity(full_name: str = None, email: str = None) -> dict:
     """
@@ -190,18 +191,19 @@ def insert_update_doctor_availability(doctor_id: uuid.UUID, role: str, day_of_we
     """
     doctor_id = str(doctor_id)
     if role == "doctor":
-        #Insert or update doctor availability based on doctor_id and day_of_week and start_time
+        #Insert or update doctor availability based on doctor_id and day_of_week
         query = """
         INSERT INTO doctor_availability (doctor_id, day_of_week, start_time, end_time, slot_duration_minutes)
         VALUES (%s, %s, %s, %s, %s)
-        ON CONFLICT (doctor_id, day_of_week, start_time) 
+        ON CONFLICT (doctor_id, day_of_week) 
         DO UPDATE SET 
+            start_time = EXCLUDED.start_time,
             end_time = EXCLUDED.end_time, 
             slot_duration_minutes = EXCLUDED.slot_duration_minutes
         RETURNING doctor_id, day_of_week, start_time, end_time, slot_duration_minutes
         """                     
         params = (
-            doctor_id,
+            doctor_id,  
             day_of_week,
             start_time,
             end_time,
