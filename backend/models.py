@@ -33,7 +33,6 @@ class Doctor(Base):
     user_email       = Column(String(255), ForeignKey("users.email", ondelete="CASCADE"), unique=True)
     specialty        = Column(String(100), nullable=False)
     qualification    = Column(String(255))
-    bio              = Column(Text)
     consultation_fee = Column(Numeric(10,2), default=0)
     created_at       = Column(DateTime(timezone=True), default=datetime.utcnow)
     user         = relationship("User", back_populates="doctor_profile")
@@ -53,6 +52,16 @@ class Patient(Base):
     user         = relationship("User", back_populates="patient_profile")
     appointments = relationship("Appointment", back_populates="patient")
     # chat_history = relationship("ChatMessage", back_populates="patient", cascade="all, delete")
+
+
+class Nurse(Base):
+    __tablename__ = "nurses"
+    id         = Column(UUID(as_uuid=False), primary_key=True, default=new_uuid)
+    user_email = Column(String(255), ForeignKey("users.email", ondelete="CASCADE"), unique=True)
+    department = Column(String(100), nullable=False)
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+
+    user = relationship("User")
 
 
 class DoctorAvailability(Base):

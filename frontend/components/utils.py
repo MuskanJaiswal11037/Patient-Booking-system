@@ -3,7 +3,7 @@ import streamlit as st
 from typing import Any, Optional
 from components.config import STATE_KEYS
 import copy
-
+import re
 
 class StateManager:
     """
@@ -265,3 +265,46 @@ def add_chat_message(role: str, content: str) -> None:
     history = state.get("chat_history", [])
     history.append({"role": role, "content": content})
     state.set("chat_history", history)
+
+def validate_mobile_number(phone: str) -> bool:
+    """
+    Validate mobile number with flexible formatting support.
+    
+    Supports:
+    - Indian format: 10 digits (e.g., 9876543210)
+    - International format: +91-9876543210, +1-2025551234
+    - Formats with spaces/dashes: 98 7654 3210, 987-654-3210
+    - Optional country code: +91, +1, +44, etc.
+    
+    Args:
+        phone: Phone number string to validate
+    
+    Returns:
+        Tuple of (is_valid: bool, message: str)
+    """
+    if not phone or not isinstance(phone, str):
+        return True
+    
+    # Remove whitespace and common separators
+    cleaned_phone = re.sub(r'[\s\-\(\).]', '', phone)
+    
+    # Pattern explanation:
+    # ^\+?[\d]{1,3}?[\d]{9,15}$ - Optional +, country code (1-3 digits), followed by 10 digits
+    phone_pattern = r'^\+?([\d]{1,3})?[\d]{10}$'
+    
+    if not re.match(phone_pattern, cleaned_phone):
+        return False
+
+    return True
+
+def validate_email_id(email_id: str):
+    email_id = email_id.strip()
+    email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+    
+    if not re.match(email_pattern, email_id):
+        return False
+    return True
+
+if __name__ == "__main__":
+    email = "abcde"
+    print(validate_email_id(email))

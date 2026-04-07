@@ -11,8 +11,10 @@ from components.api import (
     get_emergency_appointments,
     get_queue_doctors,
     create_emergency_appointment_quick,
+    register_doctor,
+    register_nurse,
 )
-from components.utils import get_state_manager
+from components.utils import get_state_manager, validate_mobile_number, validate_email_id
 from streamlit_autorefresh import st_autorefresh
 
 
@@ -733,7 +735,167 @@ def _queue_doctors_picklist_cached() -> List[Dict[str, Any]]:
     docs = get_queue_doctors()
     return docs if docs else []
 
+
+def _render_registration_tab():
+    """Render the Doctor/Nurse Registration tab."""
+    st.subheader("👥 Staff Registration")
+    st.write("Register new doctors and nurses to the system.")
+    
+    # Tabs for Doctor and Nurse registration
+    reg_col1, reg_col2 = st.tabs(["👨‍⚕️ Doctor Registration", "👩‍⚕️ Nurse Registration"])
+    
+    with reg_col1:
+        st.markdown("### Register a New Doctor")
+        
+        with st.form("doctor_registration_form", border=True):
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                doctor_email = st.text_input(
+                    "Email Address *",
+                    placeholder="doctor@hospital.com",
+                    key="doc_email"
+                )
+                doctor_phone = st.text_input(
+                    "Phone Number",
+                    placeholder="+1 (555) 000-0000",
+                    key="doc_phone"
+                )
+                doctor_specialty = st.selectbox(
+                    "Specialty *",
+                    [
+                        "Cardiology",
+                        "Dermatology",
+                        "Neurology",
+                        "Orthopedics",
+                        "Pediatrics",
+                        "Psychiatry",
+                        "Radiology",
+                        "Surgery",
+                        "General Medicine",
+                        "Other"
+                    ],
+                    key="doc_specialty"
+                )
+            
+            with col2:
+                doctor_name = st.text_input(
+                    "Full Name *",
+                    placeholder="Dr. John Doe",
+                    key="doc_name"
+                )
+                doctor_qualification = st.text_input(
+                    "Qualification *",
+                    placeholder="MD, MBBS, etc.",
+                    key="doc_qualification"
+                )
+                doctor_fee = st.number_input(
+                    "Consultation Fee ($)",
+                    min_value=0.0,
+                    value=50.0,
+                    step=5.0,
+                    key="doc_fee"
+                )
+            
+            submitted = st.form_submit_button(
+                "✅ Register Doctor",
+                use_container_width=True,
+                type="primary"
+            )
+            
+            if submitted:
+                if not doctor_email or not doctor_name or not doctor_specialty or not doctor_qualification  :
+                    st.error("❌ Please fill in all required fields (marked with *)")
+
+                if not(validate_mobile_number(doctor_phone)):
+                    st.error("❌ Invalid Mobile No.")
+                if not validate_email_id(doctor_email):
+                    st.error("❌ Invalid Email Id")
+
+                else:
+                    success = register_doctor(
+                        email=doctor_email,
+                        full_name=doctor_name,
+                        phone=doctor_phone,
+                        specialty=doctor_specialty,
+                        qualification=doctor_qualification,
+                        consultation_fee=doctor_fee
+                    )
+                    if success:
+                        st.balloons()
+                        st.rerun()
+    
+    with reg_col2:
+        st.markdown("### Register a New Nurse")
+        
+        with st.form("nurse_registration_form", border=True):
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                nurse_email = st.text_input(
+                    "Email Address *",
+                    placeholder="nurse@hospital.com",
+                    key="nurse_email"
+                )
+                nurse_phone = st.text_input(
+                    "Phone Number",
+                    placeholder="+1 (555) 000-0000",
+                    key="nurse_phone"
+                )
+            
+            with col2:
+                nurse_name = st.text_input(
+                    "Full Name *",
+                    placeholder="Jane Doe",
+                    key="nurse_name"
+                )
+                nurse_department = st.selectbox(
+                    "Department *",
+                    [
+                        "Emergency",
+                        "ICU",
+                        "General Ward",
+                        "Surgery",
+                        "Cardiology",
+                        "Pediatrics",
+                        "Maternity",
+                        "Other"
+                    ],
+                    key="nurse_department"
+                )
+            
+            submitted = st.form_submit_button(
+                "✅ Register Nurse",
+                use_container_width=True,
+                type="primary"
+            )
+            
+            if submitted:
+
+                if not nurse_email or not nurse_name or not nurse_department:
+                    st.error("❌ Please fill in all required fields (marked with *)")
+
+                if not(validate_mobile_number(nurse_phone)):
+                    st.error("❌ Invalid Mobile No.")
+                if not validate_email_id(nurse_email):
+                    st.error("❌ Invalid Email Id")
+                else:
+                    success = register_nurse(
+                        email=nurse_email,
+                        full_name=nurse_name,
+                        phone=nurse_phone,
+                        department=nurse_department
+                    )
+                    if success:
+                        st.balloons()
+                        st.rerun()
+        
+        # Info section
+        st.markdown("---")
+
+
 def page_dashboard():
+
     """Queue management: Overview, Update Appointments, Live Queue."""
     st_autorefresh(interval=300000, key="datarefresh")
 
@@ -757,12 +919,13 @@ def page_dashboard():
     st.title("🏥 Hospital Queue Management")
     st.divider()
 
-    tab_overview, tab_update, tab_live, tab_emergency = st.tabs(
+    tab_overview, tab_update, tab_live, tab_emergency, tab_registration = st.tabs(
         [
             "Overview",
             "Update Appointments",
             "Live Queue",
             "Emergency",
+            "👥 Staff Registration",
         ]
     )
 
@@ -777,6 +940,9 @@ def page_dashboard():
 
     with tab_emergency:
         _render_emergency_tab()
+    
+    with tab_registration:
+        _render_registration_tab()
 
 
 

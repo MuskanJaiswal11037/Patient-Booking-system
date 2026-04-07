@@ -29,3 +29,5 @@ streamlit-webrtc==0.47.0
 pydub==0.25.1
 numpy==1.24.3
 av==10.1.0
+gspread
+apscheduler==3.10.4

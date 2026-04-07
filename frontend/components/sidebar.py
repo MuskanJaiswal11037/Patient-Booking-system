@@ -3,7 +3,8 @@ import streamlit as st
 from components.utils import is_logged_in, logout, reset_chat_history, get_state_manager
 from components.config import ROLE_NAVIGATION
 from components.api import is_registered, get_user_role
-
+import os
+from dotenv import load_dotenv
 
 def render_sidebar():
     """Render sidebar with navigation and user info."""
@@ -61,7 +62,17 @@ def render_sidebar():
                 with col1:
                     if st.button("🔑 Login", use_container_width=True):
                         page = "🔑 Login"
-                
+
+                    st.divider()
+                    load_dotenv()
+                    st.link_button(
+                            label="📋 Fill the Google Form",
+                            url=os.getenv("GOOGLE_FORM_LINK"),
+                            use_container_width=True,
+                            type="primary"  # Makes it look highlighted
+                    )
+
+
                 if not page:    
-                    st.info("👈 Please login or register to get started")
+                    st.info("👈 Please Login/fill google form to get started")
         get_state_manager().set('current_page', page)  # Store current page in state for access in sidebar

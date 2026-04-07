@@ -79,7 +79,7 @@ class PageFactory:
             requires_auth=False
         )
         
-        # Patient pages (requires auth + patient role)
+        # Patient pages (requires auth)
         self.register_page(
             "💬 Book via Chat",
             render_patient_chat_page,

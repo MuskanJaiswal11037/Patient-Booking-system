@@ -293,3 +293,71 @@ def update_queue_appointment_status(appointment_id: str, status: str) -> bool:
     return True
 
 
+def register_doctor(
+    email: str,
+    full_name: str,
+    phone: Optional[str] = None,
+    specialty: Optional[str] = None,
+    qualification: Optional[str] = None,
+    consultation_fee: Optional[float] = None
+) -> bool:
+    """Register a new doctor."""
+    payload = {
+        "email": email.strip(),
+        "full_name": full_name.strip(),
+        "role": "doctor",
+    }
+    if phone:
+        payload["phone"] = phone.strip()
+    if specialty:
+        payload["specialty"] = specialty.strip()
+    if qualification:
+        payload["qualification"] = qualification.strip()
+    if consultation_fee is not None:
+        payload["consultation_fee"] = float(consultation_fee)
+    
+    response = api_request("POST", "/auth/register-doctor", json=payload)
+    if response is None:
+        return False
+    if response.status_code not in [200, 201]:
+        try:
+            detail = response.json().get("detail") or response.json().get("message", response.text)
+        except Exception:
+            detail = response.text
+        st.error(f"❌ Doctor registration failed: {detail}")
+        return False
+    st.success("✅ Doctor registered successfully!")
+    return True
+
+
+def register_nurse(
+    email: str,
+    full_name: str,
+    phone: Optional[str] = None,
+    department: Optional[str] = None
+) -> bool:
+    """Register a new nurse."""
+    payload = {
+        "email": email.strip(),
+        "full_name": full_name.strip(),
+        "role": "nurse",
+    }
+    if phone:
+        payload["phone"] = phone.strip()
+    if department:
+        payload["department"] = department.strip()
+    
+    response = api_request("POST", "/auth/register-nurse", json=payload)
+    if response is None:
+        return False
+    if response.status_code not in [200, 201]:
+        try:
+            detail = response.json().get("detail") or response.json().get("message", response.text)
+        except Exception:
+            detail = response.text
+        st.error(f"❌ Nurse registration failed: {detail}")
+        return False
+    st.success("✅ Nurse registered successfully!")
+    return True
+
+

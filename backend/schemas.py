@@ -26,6 +26,24 @@ class RegisterRequest(BaseModel):
     blood_group:   Optional[str]  = None
 
 
+class RegisterDoctorRequest(BaseModel):
+    email:             EmailStr
+    full_name:         str
+    phone:             Optional[str] = None
+    specialty:         Optional[str] = None
+    qualification:     Optional[str] = None
+    consultation_fee:  Optional[float] = None
+    role:              str = "doctor"
+
+
+class RegisterNurseRequest(BaseModel):
+    email:      EmailStr
+    full_name:  str
+    phone:      Optional[str] = None
+    department: Optional[str] = None
+    role:       str = "nurse"
+
+
 class AppointmentRequest(BaseModel):
     doctor_email: Optional[str] = None
     status: Optional[str] = None

@@ -24,12 +24,12 @@ import numpy as np
 from backend.utils import queue_management_data
 from backend.database import get_db, engine, Base
 from backend.models import (User, Doctor, Patient, Appointment,
-                             ChatMessage, Feedback)
+                             ChatMessage, Feedback, Nurse)
 from backend.auth import (hash_password, verify_password, create_access_token,
                            get_current_user, require_role)
 from backend.schemas import (RegisterRequest, TokenResponse, ChatRequest,
                               ChatResponse, CancelRequest,
-                              FeedbackRequest, FeedbackOut, DoctorOut, User as UserSchema, isRegisteredRequest, isRegisteredResponse, AppointmentRequest, UpdateAppointmentStatusRequest, QueueManagementResponse, QueueDoctorsResponse, CreateEmergencyQuickRequest, AssignEmergencyDoctorRequest, UserRoleResponse, UserRoleRequest)
+                              FeedbackRequest, FeedbackOut, DoctorOut, User as UserSchema, isRegisteredRequest, isRegisteredResponse, AppointmentRequest, UpdateAppointmentStatusRequest, QueueManagementResponse, QueueDoctorsResponse, CreateEmergencyQuickRequest, AssignEmergencyDoctorRequest, UserRoleResponse, UserRoleRequest, RegisterDoctorRequest, RegisterNurseRequest)
 from backend import llm_service
 from backend.config import settings
 import logging
@@ -37,10 +37,48 @@ import io
 from fastapi import UploadFile, File
 from fastapi.responses import StreamingResponse
 from openai import OpenAI
+from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.triggers.interval import IntervalTrigger
+from backend.utils.google_form_handler import sync_google_form_submissions
 
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="MedApp API", version="1.0.0")
+
+# ══════════════════════════════════════════════════════════════════
+#  BACKGROUND SCHEDULER - Google Form Sync
+# ══════════════════════════════════════════════════════════════════
+scheduler = BackgroundScheduler(daemon=True)
+
+def scheduled_google_form_sync():
+    """Background job to sync Google Form submissions every 5 minutes."""
+    try:
+        result = sync_google_form_submissions()
+        logger.info(f"✅ Scheduled sync completed: {result}")
+    except Exception as e:
+        logger.error(f"❌ Error in scheduled sync: {e}")
+
+@app.on_event("startup")
+async def startup_event():
+    """Start background scheduler on app startup."""
+    if not scheduler.running:
+        # Add job: sync every 5 minutes (300 seconds)
+        scheduler.add_job(
+            scheduled_google_form_sync,
+            trigger=IntervalTrigger(seconds=300),  # 5 minutes
+            id='sync_google_forms',
+            name='Sync Google Form Submissions',
+            replace_existing=True
+        )
+        scheduler.start()
+        logger.info("🚀 Background scheduler started - Google Form sync: every 5 minutes")
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Stop background scheduler on app shutdown."""
+    if scheduler.running:
+        scheduler.shutdown()
+        logger.info("🛑 Background scheduler stopped")
 
 app.add_middleware(
     CORSMiddleware,
@@ -81,6 +119,62 @@ async def register(body: RegisterRequest, db: Session = Depends(get_db)):
     print(f"Registered user {user.email} with ID {user.id}" )
     db.commit()
     return {"message": "Registered successfully", "role": "patient"}
+
+
+@app.post("/auth/register-doctor", status_code=201)
+async def register_doctor(body: RegisterDoctorRequest, db: Session = Depends(get_db)):
+    """Register a new doctor."""
+    # unique email check
+    existing = db.execute(select(User).where(User.email == body.email))
+    if existing.scalar_one_or_none():
+        raise HTTPException(400, "Email already registered")
+
+    user = User(
+        email=body.email,
+        full_name=body.full_name,
+        role="doctor",
+        phone=body.phone,
+    )
+    db.add(user)
+    db.flush()
+
+    doctor = Doctor(
+        user_email=body.email,
+        specialty=body.specialty or "General",
+        qualification=body.qualification,
+        consultation_fee=body.consultation_fee or 0.0
+    )
+    db.add(doctor)
+    print(f"Registered doctor {user.email} with ID {user.id}")
+    db.commit()
+    return {"message": "Doctor registered successfully", "role": "doctor", "email": body.email}
+
+
+@app.post("/auth/register-nurse", status_code=201)
+async def register_nurse(body: RegisterNurseRequest, db: Session = Depends(get_db)):
+    """Register a new nurse."""
+    # unique email check
+    existing = db.execute(select(User).where(User.email == body.email))
+    if existing.scalar_one_or_none():
+        raise HTTPException(400, "Email already registered")
+
+    user = User(
+        email=body.email,
+        full_name=body.full_name,
+        role="nurse",
+        phone=body.phone,
+    )
+    db.add(user)
+    db.flush()
+
+    nurse = Nurse(
+        user_email=body.email,
+        department=body.department or "General"
+    )
+    db.add(nurse)
+    print(f"Registered nurse {user.email} with ID {user.id}")
+    db.commit()
+    return {"message": "Nurse registered successfully", "role": "nurse", "email": body.email}
 
 
 
@@ -138,7 +232,7 @@ async def appointment_details(body: AppointmentRequest):
     result = queue_management_data.extract_appointments_data(
         doctor_email=body.doctor_email or None, status=body.status or None
     )
-    print(result)
+    # print(result)
     if result["success"]:
         return QueueManagementResponse(
             success=result["success"],
@@ -347,4 +441,56 @@ async def text_to_speech(
     except Exception as e:
         logger.error(f"TTS error: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"TTS failed: {type(e).__name__}: {e}")
+
+
+# ══════════════════════════════════════════════════════════════════
+#  GOOGLE FORM SYNC - Manual Endpoint
+# ══════════════════════════════════════════════════════════════════
+
+@app.post("/google-forms/sync")
+async def manual_google_form_sync():
+    """
+    Manually trigger Google Form submission sync.
+    This endpoint allows you to manually sync Google Form submissions to the database.
+    
+    Returns:
+        {
+            "success": true,
+            "message": "Google Form sync completed",
+            "total_submissions": 5,
+            "successful": 3,
+            "skipped_duplicates": 2,
+            "failed": 0,
+            "errors": []
+        }
+    """
+    return sync_google_form_submissions()
+
+
+@app.get("/google-forms/status")
+async def google_form_sync_status():
+    """
+    Get the status of the background Google Form sync scheduler.
+    
+    Returns:
+        {
+            "running": true,
+            "schedule_interval_seconds": 300,
+            "schedule_interval_minutes": 5,
+            "next_run_time": "2026-04-07 12:05:30"
+        }
+    """
+    if scheduler.running:
+        job = scheduler.get_job('sync_google_forms')
+        return {
+            "running": True,
+            "schedule_interval_seconds": 300,
+            "schedule_interval_minutes": 5,
+            "next_run_time": str(job.next_run_time) if job else "Not scheduled"
+        }
+    return {
+        "running": False,
+        "message": "Scheduler is not running"
+    }
+
 

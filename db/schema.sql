@@ -34,6 +34,16 @@ CREATE TABLE IF NOT EXISTS doctors (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-----FAMILY MEMBERS
+
+CREATE TABLE IF NOT EXISTS family_members (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_email VARCHAR(255) NOT NULL REFERENCES users(email) ON DELETE CASCADE,
+    name VARCHAR(255) NOT NULL,
+    relationship VARCHAR(50),
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 ------ NURSES
 CREATE TABLE IF NOT EXISTS nurses(
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -66,13 +76,15 @@ create table admin_profiles (
 CREATE TABLE IF NOT EXISTS doctor_availability (
     id         UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     doctor_id  UUID NULL REFERENCES doctors(id) ON DELETE CASCADE,
-    day_of_week INT NOT NULL CHECK (day_of_week BETWEEN 0 AND 6), -- 0=Mon, 6=Sun
+    day_of_week INT NOT NULL CHECK (day_of_week BETWEEN 0 AND 6), 0=Sunday, 1=Monday
     start_time TIME NOT NULL,
     end_time   TIME NOT NULL,
     slot_duration_minutes INT DEFAULT 15,
     slot_duration_minutes INT DEFAULT 15,
     UNIQUE (doctor_id, day_of_week, start_time)
 );
+
+create unique index idx_doctor_availability_doctor_day_time on doctor_availability (doctor_id, day_of_week);
 
 
 -- ──────────────────────────────────────────────────────────────
@@ -81,6 +93,7 @@ CREATE TABLE IF NOT EXISTS doctor_availability (
 CREATE TABLE IF NOT EXISTS appointments (
     id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     patient_id      UUID REFERENCES patients(id) ON DELETE CASCADE,
+    family_member_id UUID REFERENCES family_members(id) ON DELETE SET NULL,
     doctor_id       UUID REFERENCES doctors(id) ON DELETE CASCADE,
     appointment_at  TIMESTAMPTZ NOT NULL,
     duration_minutes INT DEFAULT 15,
@@ -92,7 +105,6 @@ CREATE TABLE IF NOT EXISTS appointments (
     cancelled_at    TIMESTAMPTZ,
     cancel_reason   TEXT,
     drive_link      VARCHAR(500),
-    criticality_level INT DEFAULT 1 CHECK (criticality_level BETWEEN 0 AND 1),
     criticality_level INT DEFAULT 1 CHECK (criticality_level BETWEEN 0 AND 1),
     created_at      TIMESTAMPTZ DEFAULT NOW(),
     updated_at      TIMESTAMPTZ DEFAULT NOW()
@@ -198,5 +210,16 @@ create table calender_events (
 --             VALUES (%s,4e9d7565-a7f7-4764-8f76-61f56088ed19, 2df39159-ee26-4153-adcb-49ac1605e257, %s, %s, %s, NOW(), NOW())
 --             id, appointment_at, status;
 
-
-select * from appointments;
+CREATE TABLE IF NOT EXISTS google_form_submissions_log (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    email VARCHAR(255) NOT NULL,
+    appointment_date VARCHAR(20) NOT NULL,
+    appointment_time VARCHAR(20) NOT NULL,
+    submission_hash VARCHAR(255) UNIQUE NOT NULL,
+    processed BOOLEAN DEFAULT TRUE,
+    processed_at TIMESTAMPTZ DEFAULT NOW(),
+    appointment_id UUID REFERENCES appointments(id) ON DELETE SET NULL,
+    error_message TEXT
+);
+drop table if exists google_form_submissions_log;
+CREATE INDEX idx_submission_hash ON google_form_submissions_log(submission_hash);

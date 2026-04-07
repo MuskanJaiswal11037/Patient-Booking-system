@@ -7,8 +7,10 @@ Modular architecture with separate components for:
   - API communication
   - Page components (chat, appointments, feedback, schedule)
 """
-import streamlit as st
+import os
 
+import streamlit as st
+from dotenv import load_dotenv
 # Import components
 from components.config import PAGE_TITLE, PAGE_ICON, LAYOUT, INITIAL_SIDEBAR_STATE
 from components.utils import get_state_manager, init_session_state, init_user, is_logged_in
@@ -221,4 +223,6 @@ if page:
             st.info("👈 Please login or register to get started.")
 else:
     # No page selected (not logged in)
-    st.info("👈 If loggged in then please navigate to book via chat or view queue real-time status; otherwise register to get started.")
+    st.info("👈 If loggged in then please navigate to book via chat or view queue real-time status; otherwise register/login to get started.")
+    
+    

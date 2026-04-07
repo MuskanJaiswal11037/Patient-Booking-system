@@ -9,12 +9,14 @@ Uses atexit to automatically close the connection on program exit.
 
 import logging
 import atexit
+import os
 import psycopg2
 from psycopg2.extras import RealDictCursor
 from typing import Any, Optional, Dict, List
-from backend.config import settings
+from dotenv import load_dotenv  
 
 logger = logging.getLogger(__name__)
+load_dotenv()  # Load environment variables from .env file
 
 
 class DatabaseException(Exception):
@@ -139,4 +141,4 @@ class DatabaseHandler:
             finally:
                 self.conn = None
 
-db_handler = DatabaseHandler(settings.DATABASE_URL)
+db_handler = DatabaseHandler(os.getenv("DATABASE_URL"))

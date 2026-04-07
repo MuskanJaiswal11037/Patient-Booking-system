@@ -22,7 +22,7 @@ from backend.config import settings
 from .utils import DatabaseHandler, DatabaseException
 from .utils.prompts import get_system_prompt
 from langgraph.checkpoint.postgres import PostgresSaver
-from .tools import execute_sql_query, insert_update_appointment_status, insert_feedback, insert_update_doctor_availability, insert_medical_record, resolve_user_identity, retrieve_medical_records, get_today_date, retrieve_all_users, check_doctor_availability
+from .tools import execute_sql_query, insert_update_appointment_status, insert_feedback, insert_update_doctor_availability, insert_medical_record, resolve_user_identity, retrieve_medical_records, get_today_date, retrieve_all_users, check_doctor_availability, get_waiting_time, get_doctor_available_slots
 logger = logging.getLogger(__name__)
 
 
@@ -63,8 +63,7 @@ def create_deep_agent_for_hospital(user_email: str = "test_user@test.com", user_
     user_role : str
         Role of the user interacting with the agent (e.g., "patient", "doctor", "nurse", "admin")
     """
-    tools = [execute_sql_query, insert_update_appointment_status, insert_feedback, insert_update_doctor_availability, insert_medical_record, retrieve_medical_records, insert_medical_record, retrieve_medical_records, resolve_user_identity, get_today_date, retrieve_all_users, check_doctor_availability]
-    print("++++++++++++++++++++++++++++++++++++++++++   " + user_role  )
+    tools = [execute_sql_query, insert_update_appointment_status, insert_feedback, insert_update_doctor_availability, insert_medical_record, retrieve_medical_records, insert_medical_record, retrieve_medical_records, resolve_user_identity, get_today_date, retrieve_all_users, check_doctor_availability, get_waiting_time, get_doctor_available_slots]
     system_prompt = "System Prompt: " +  get_system_prompt(user_role, user_email)
     lanchain_checkpoint.setup()  # Create tables if they don't exist
     agent = create_deep_agent(

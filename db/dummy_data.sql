@@ -495,7 +495,6 @@ VALUES
 ('radhe.muskan26@gmail.com', 'Dermatology', 'MBBS, MD Dermatology', 500),
 ('doctor1@gmail.com', 'Orthopedics', 'MBBS, MS Orthopedics', 700);
 
-
 select * from nurses;
 INSERT INTO nurses (user_email, department)
 VALUES
@@ -536,7 +535,11 @@ UPDATE appointments
 SET status = 'scheduled', appointment_at = '2026-04-04 09:30:00' 
 WHERE id = '225c6fd1-917c-4b97-8572-f67686012372';
 
+
+select *from doctors;
 select * from appointments;
+
+select * from doctor_availability where doctor_id = '610a79b0-56f1-4f87-8008-ed064c054f74';
 
 
 

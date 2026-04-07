@@ -18,7 +18,8 @@ class Settings(BaseSettings):
     GOOGLE_REDIRECT_URI: str = os.getenv("GOOGLE_REDIRECT_URI", "http://localhost:8000/auth/google/callback")
     gmail_sender_address: str = os.getenv("GMAIL_SENDER_ADDRESS")
     gmail_sender_password: str = os.getenv("GMAIL_SENDER_PASSWORD")
-
+    GOOGLE_FORM_LINK: str = os.getenv("GOOGLE_FORM_LINK")
+    SHEET_ID: str = os.getenv("SHEET_ID")
 
     class Config:
         env_file = ".env"

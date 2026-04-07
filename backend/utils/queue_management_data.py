@@ -2,6 +2,10 @@ from typing import Any, Dict, List, Optional, Tuple
 import uuid
 from typing import Any, Dict, List, Optional, Tuple
 import uuid
+
+from dotenv import load_dotenv
+from backend.utils.gmail_service import send_confirmation_email, send_calendar_invite
+import os
 from .database_handler import db_handler
 
 def extract_appointments_data(
@@ -70,11 +74,46 @@ def extract_appointments_data(
 def update_status(appointment_id, status):
     query = """
     UPDATE appointments SET status = %s WHERE id = %s
-    RETURNING id, status
+    RETURNING id, status, patient_id, doctor_id, appointment_at
     """
     params = (status, appointment_id)
     result = db_handler.execute_query(query, params)
+    load_dotenv()
     if result:
+        patient_id = result[0]["patient_id"]
+        doctor_id = result[0]["doctor_id"]
+        start_time = result[0]["appointment_at"]
+        result2 = db_handler.execute_query("select * from patients where id = %s", (patient_id,))
+        if result2:
+            user_email = result2[0]["user_email"]
+            
+            print(f"Patient email for appointment {appointment_id}: {user_email}")
+            if status != "in-progress":
+                send_confirmation_email(
+                            sender_email=os.getenv("GMAIL_SENDER_ADDRESS"),     
+                            sender_password=os.getenv("GMAIL_SENDER_PASSWORD"),
+                            recipient_email=user_email,
+                            recipient_name= "",
+                            subject="Appointment Status Changed",
+                            status=status
+                        )  
+            if status == "cancelled":
+                result2 = db_handler.execute_query("select * from doctors where id = %s", (doctor_id,))
+                if result2:
+                    doctor_email = result2[0]["user_email"]
+                send_calendar_invite(
+                            app_id=str(appointment_id),
+                            sender_email=os.getenv("GMAIL_SENDER_ADDRESS"),
+                            sender_password=os.getenv("GMAIL_SENDER_PASSWORD"),
+                            recipient_email=doctor_email,
+                            recipient_name="",
+                            event_title="Doctor Appointment",
+                            event_description="Your appointment has been cancelled.",
+                            start_time=start_time,
+                            db_handler=db_handler,
+                            method="CANCEL"
+                        )
+                
         return {
             "success": True,
             "message": "Detailes updated successfully",
@@ -112,7 +151,6 @@ def waiting_list_people():
         LEFT JOIN doctors d ON d.id = a.doctor_id
         LEFT JOIN users ud ON ud.email = d.user_email
         WHERE status IN ('scheduled', 'rescheduled')
-          AND appointment_at <= NOW()
           AND appointment_at <= NOW()
           AND DATE(appointment_at) = CURRENT_DATE
         ORDER BY criticality_level, appointment_at, created_at
@@ -176,7 +214,7 @@ def create_emergency_appointment_now(
     patient_email: str,
     reason: str,
     doctor_email: Optional[str] = None,
-    patient_name: Optional[str] = None,
+    patient_name: str = "Unknown",
     duration_minutes: int = 15,
     status: str = "scheduled",
 ) -> dict:

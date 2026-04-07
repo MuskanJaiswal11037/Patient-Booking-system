@@ -5,7 +5,7 @@ from dotenv import load_dotenv
     
 from langchain_core.tools import tool
 import uuid
-
+from .utils.queue_management_data import waiting_list_people
 from backend.utils.gmail_service import send_calendar_invite, send_confirmation_email
 from .utils.database_handler import db_handler, DatabaseException
 from textblob import TextBlob
@@ -176,14 +176,14 @@ def resolve_user_identity(full_name: str = None, email: str = None) -> dict:
 
 
 @tool 
-def insert_update_doctor_availability(doctor_id: uuid, role: str, day_of_week: int, start_time: str, end_time: str, slot_duration_minutes = 15) -> dict:
+def insert_update_doctor_availability(doctor_id: uuid.UUID, role: str, day_of_week: int, start_time: str, end_time: str, slot_duration_minutes = 15) -> dict:
    
     """Insert or update doctor availability based on doctor_id and day_of_week and start_time in doctor_availability table.
 
     Args:
         doctor_id: ID of the doctor present in doctor's table
         role: User role (should be 'doctor')
-        day_of_week: Day of week (1=Monday, 0=Sunday)
+        day_of_week: Day of week (0=Monday, 1=Tuesday, 2=Wednesday, 3=Thursday, 4=Friday, 5=Saturday, 6=Sunday)
         start_time: Start time as string (format: HH:MM:SS)
         end_time: End time as string (format: HH:MM:SS)
         slot_duration_minutes: Duration of appointment slots in minutes (default: 15)
@@ -222,7 +222,7 @@ def insert_update_doctor_availability(doctor_id: uuid, role: str, day_of_week: i
             }
 
 @tool 
-def insert_update_appointment_status(user_email:str, id:uuid.UUID, new_status: str, action: str, appointment_data: dict = None, role: str = None, updated_appointment_time: datetime = None) -> dict:
+def insert_update_appointment_status(user_email:str, id:uuid.UUID, new_status: str, action: str, appointment_data: dict = None, role: str = None, updated_appointment_time: datetime.datetime = None) -> dict:
     """
     Add or cancel an appointment. If u want to cancel the appointment then new sttus should be cancelled.
 
@@ -796,13 +796,12 @@ def check_doctor_availability(doctor_id: str, appointment_datetime: str) -> dict
         requested_dt = datetime.datetime.strptime(appointment_datetime, "%Y-%m-%d %H:%M:%S")
         requested_time = requested_dt.time()
         
-        # Get day of week (0=Monday, 6=Sunday according to weekday(); but DB uses 0=Sunday, 1=Monday)
-        # Python's weekday(): 0=Monday, 6=Sunday
-        # DB format: 0=Sunday, 1=Monday, ..., 6=Saturday
+        # Get day of week (0=Monday, 6=Sunday according to weekday())
+        # DB format also uses: 0=Monday, 1=Tuesday, ..., 6=Sunday (same as Python's weekday())
         day_of_week_python = requested_dt.weekday()  # 0=Monday
-        day_of_week_db = (day_of_week_python + 1) % 7  # Convert to DB format (0=Sunday)
+        day_of_week_db = day_of_week_python  # No conversion needed - DB uses same format
         
-        day_names = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
+        day_names = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
         day_name = day_names[day_of_week_db]
         
         # Query doctor availability for this day
@@ -837,8 +836,8 @@ def check_doctor_availability(doctor_id: str, appointment_datetime: str) -> dict
         is_available_at_requested_time = False
         
         for slot in result:
-            start_time_str = result[0].get("start_time")
-            end_time_str = result[0].get("end_time")
+            start_time_str = slot.get("start_time")
+            end_time_str = slot.get("end_time")
             # slot_duration = slot.get("slot_duration_minutes", 15)
             
             # Convert time strings to time objects if they're strings
@@ -884,5 +883,298 @@ def check_doctor_availability(doctor_id: str, appointment_datetime: str) -> dict
         return {
             "success": False,
             "message": f"Failed to check doctor availability: {str(e)}",
+            "error": str(e)
+        }
+    
+
+def get_waiting_time(appointment_id, doctor_id):
+    """
+    Calculate the waiting time for an appointment by finding the number of 
+    appointments scheduled before it and their durations.
+    
+    Args:
+        appointment_id: UUID of the appointment
+        doctor_id: UUID of the doctor for the given appointment for which waiting time is to be calculated
+    
+    Returns:
+        dict with waiting time info including:
+        - success: bool
+        - message: str
+        - waiting_time_minutes: int (total minutes of appointments ahead)
+        - appointments_ahead: int (count of appointments ahead)
+        - appointment_details: dict (the appointment details)
+    """
+    result = waiting_list_people()
+    if result["success"]:
+        waiting_queue = result["availability"]
+        estimated_waiting_time = 0
+        count = 0
+        flag = 0
+        for apt in waiting_queue:
+            if(apt["id"] == appointment_id):
+                flag = 1
+                break
+            elif apt["doctor_id"] == doctor_id:
+                if(apt["criticality_level"] == 0):
+                    estimated_waiting_time += 40
+                else:
+                    estimated_waiting_time += 15
+                count += 1
+    
+        if flag == 0:
+            return {
+            "success": False,
+            "message": "Failed to calculate waiting time. Your schedule is not been added to the queue yet."
+        }
+        return {
+            "success": True,
+            "message": f"Estimated waiting time for given appointment is: {estimated_waiting_time} minutes",
+            "people_ahead": count,
+        }
+    else:
+        return {
+            "success": False,
+            "message": "Failed to calculate waiting time: " + result.get("message", "Unknown error")
+        }
+
+
+@tool
+def get_doctor_available_slots(doctor_id: str = None, doctor_email: str = None, start_time: str = None, days_ahead: int = 7, num_slots: int = None, slot_duration_minutes: int = 15) -> dict:
+    """
+    Get vest available appointment slots for a doctor after a given start_time.
+    
+    Args:
+        doctor_id: UUID of the doctor (optional if doctor_email provided)
+        doctor_email: Email of the doctor (optional if doctor_id provided)
+        start_time: Starting datetime to search from (format: "YYYY-MM-DD HH:MM:SS"). If not provided, uses current time.
+        days_ahead: Number of days to look ahead from start_time (default: 7)
+        num_slots: Number of slots to return if user mentions
+        slot_duration_minutes: Duration of appointment slot in minutes (default: 15)
+    
+    Returns:
+        Dictionary with:
+        - success: bool - Whether the operation was successful
+        - message: str - Human-readable message
+        - doctor_name: str - Name of the doctor
+        - doctor_email: str - Email of the doctor
+        - start_time_requested: str - The start time requested
+        - available_slots: list - List of 3-4 best available slots with datetime, duration, etc.
+        - total_available_slots: int - Total number of available slots found (beyond the returned ones)
+    """
+    try:
+        # Parse start_time if provided
+        if start_time:
+            try:
+                search_from = datetime.datetime.strptime(start_time, "%Y-%m-%d %H:%M:%S")
+            except ValueError:
+                return {
+                    "success": False,
+                    "message": f"Invalid start_time format. Use 'YYYY-MM-DD HH:MM:SS': {start_time}"
+                }
+        else:
+            search_from = datetime.datetime.now()
+
+        if search_from < datetime.datetime.now():
+            search_from = datetime.datetime.now()
+        
+        print(f"🔍 DEBUG: Searching for slots from {search_from} to {search_from + datetime.timedelta(days=days_ahead)}")
+        
+        # Step 1: Resolve doctor ID if email provided
+        if doctor_email and not doctor_id:
+            query = "SELECT id FROM doctors WHERE user_email = %s"
+            result = db_handler.execute_query(query, (doctor_email,))
+            if not result:
+                return {
+                    "success": False,
+                    "message": f"Doctor with email {doctor_email} not found"
+                }
+            doctor_id = str(result[0]["id"])
+        
+        if not doctor_id:
+            return {
+                "success": False,
+                "message": "Either doctor_id or doctor_email is required"
+            }
+        
+        # Step 2: Get doctor details
+        doctor_query = """
+            SELECT d.id, d.user_email, u.full_name
+            FROM doctors d
+            JOIN users u ON u.email = d.user_email
+            WHERE d.id = %s
+        """
+        doctor_result = db_handler.execute_query(doctor_query, (doctor_id,))
+        if not doctor_result:
+            return {
+                "success": False,
+                "message": f"Doctor with ID {doctor_id} not found"
+            }
+        
+        doctor = doctor_result[0]
+        doctor_name = doctor.get("full_name", "Unknown")
+        doctor_email_result = doctor.get("user_email", "")
+        
+        # Step 3: Get doctor's availability schedule (weekly recurring)
+        availability_query = """
+            SELECT day_of_week, start_time, end_time, slot_duration_minutes
+            FROM doctor_availability
+            WHERE doctor_id = %s
+            ORDER BY day_of_week, start_time
+        """
+        availability_result = db_handler.execute_query(availability_query, (doctor_id,))
+        
+        if not availability_result:
+            return {
+                "success": True,
+                "message": "Doctor has no availability schedule defined",
+                "doctor_name": doctor_name,
+                "doctor_email": doctor_email_result,
+                "start_time_requested": start_time or search_from.isoformat(),
+                "available_slots": [],
+                "total_available_slots": 0
+            }
+        
+        print(f"📅 DEBUG: Doctor {doctor_name} has {len(availability_result)} availability slots configured")
+        
+        # Create a schedule map: day_of_week -> list of (start_time, end_time, duration)
+        schedule_map = {}
+        for avail in availability_result:
+            dow = avail.get("day_of_week")
+            start_time_slot = avail.get("start_time")
+            end_time = avail.get("end_time")
+            duration = avail.get("slot_duration_minutes", slot_duration_minutes)
+            
+            if dow not in schedule_map:
+                schedule_map[dow] = []
+            schedule_map[dow].append({
+                "start": start_time_slot,
+                "end": end_time,
+                "duration": duration
+            })
+        
+        # Step 4: Get all booked appointments for the next days_ahead days
+        future_date = search_from + datetime.timedelta(days=days_ahead)
+        
+        booked_query = """
+            SELECT appointment_at, COUNT(*) as booking_count
+            FROM appointments
+            WHERE doctor_id = %s
+              AND appointment_at >= %s::TIMESTAMPTZ
+              AND appointment_at <= %s::TIMESTAMPTZ
+              AND status IN ('scheduled', 'rescheduled', 'in-progress')
+            GROUP BY appointment_at
+            HAVING COUNT(*) = 2
+            ORDER BY appointment_at
+        """
+        booked_result = db_handler.execute_query(booked_query, (doctor_id, search_from, future_date))
+        booked_slots = booked_result if booked_result else []
+
+        print(f"📅 DEBUG: Found {len(booked_slots)} booked appointment slots")
+
+        
+        # Convert booked slots to a list of (start_time, end_time) tuples for easier comparison
+        booked_times_list = []
+        for booking in booked_slots:
+            apt_time = booking.get("appointment_at")
+            # Ensure apt_time is a datetime object
+            if isinstance(apt_time, str):
+                try:
+                    apt_time = datetime.datetime.fromisoformat(apt_time.replace('Z', '+00:00'))
+                except:
+                    apt_time = datetime.datetime.fromisoformat(apt_time)
+            # Strip timezone info to make it naive (matching current_slot_time which is naive)
+            if apt_time.tzinfo is not None:
+                apt_time = apt_time.replace(tzinfo=None)
+            duration = booking.get("duration_minutes", 15)
+            apt_end = apt_time + datetime.timedelta(minutes=duration)
+            booked_times_list.append((apt_time, apt_end))
+        
+        # Step 5: Generate available slots
+        available_slots = []
+        current_date = search_from.date()
+        end_date = future_date.date()
+        
+        while current_date <= end_date:  # Get some buffer
+            # Get day of week (0=Monday, 6=Sunday in Python; DB uses 0=Monday, 6=Sunday too)
+            py_dow = current_date.weekday()
+            # Python weekday: 0=Mon, 1=Tue, ..., 6=Sun
+            # DB seems to use: 0=Mon, 1=Tue, ..., 6=Sun (same as Python)
+            db_dow = py_dow
+            
+            if db_dow in schedule_map:
+                for slot in schedule_map[db_dow]:
+                    start_time_slot = slot["start"]
+                    end_time = slot["end"]
+                    duration = slot["duration"]
+                    print("+++++++++++++++++++++", start_time_slot, end_time, duration)
+                    
+                    # Convert time to datetime for this date
+                    if isinstance(start_time_slot, str):
+                        start_time_slot = datetime.datetime.strptime(start_time_slot, "%H:%M:%S").time()
+                    if isinstance(end_time, str):
+                        end_time = datetime.datetime.strptime(end_time, "%H:%M:%S").time()
+                    
+                    slot_start_dt = datetime.datetime.combine(current_date, start_time_slot)
+                    slot_end_dt = datetime.datetime.combine(current_date, end_time)
+                    
+                    # Generate slots within this availability window
+                    current_slot_time = slot_start_dt
+                    while current_slot_time + datetime.timedelta(minutes=15) <= slot_end_dt:
+                        # Check if this slot is booked
+                        is_booked = False
+                        slot_end = current_slot_time + datetime.timedelta(minutes=15)
+                        if(current_slot_time.time() >= datetime.time(13, 0, 0) and current_slot_time.time() < datetime.time(13, 30, 0)):
+                            is_booked = True
+                        
+                        # Check for overlap with booked appointments
+                        for booked_start, booked_end in booked_times_list:
+                            # Check for overlap: slots overlap if one doesn't completely end before the other starts
+                            if not (slot_end <= booked_start or current_slot_time >= booked_end):
+                                is_booked = True
+                                break  # No need to check other bookings
+                        
+                        if not is_booked and current_slot_time >= search_from:  # Only slots >= search_from
+                            available_slots.append({
+                                "date": current_slot_time.date().isoformat(),
+                                "time": current_slot_time.time().isoformat(),
+                                "datetime": current_slot_time.isoformat(),
+                                "duration_minutes": 15,
+                                "day_of_week": current_date.strftime("%A"),
+                                "distance_minutes": abs((current_slot_time - search_from).total_seconds() / 60)
+                            })
+                        
+                        current_slot_time += datetime.timedelta(minutes=15)
+            
+            current_date += datetime.timedelta(days=1)
+        
+        # Sort by distance from search_from (start_time) and get the best num_slots
+        available_slots.sort(key=lambda x: x["distance_minutes"])
+        best_slots = available_slots
+        if num_slots is not None:
+            best_slots = available_slots[:num_slots]
+
+        
+        # Remove the distance_minutes field from output for cleaner response
+        for slot in best_slots:
+            del slot["distance_minutes"]
+        
+        total_available = len(available_slots)
+        
+        print(f"✅ DEBUG: Generated {total_available} total available slots, returning top {len(best_slots)} slots")
+        
+        return {
+            "success": True,
+            "message": f"Found {num_slots} best available slots for {doctor_name} (total {total_available} available)",
+            "doctor_name": doctor_name,
+            "doctor_email": doctor_email_result,
+            "start_time_requested": start_time or search_from.isoformat(),
+            "available_slots": best_slots,
+            "total_available_slots": total_available
+        }
+    
+    except Exception as e:
+        return {
+            "success": False,
+            "message": f"Failed to get available slots: {str(e)}",
             "error": str(e)
         }

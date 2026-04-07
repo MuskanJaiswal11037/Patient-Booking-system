@@ -45,7 +45,15 @@ def send_calendar_invite(app_id, sender_email, sender_password, recipient_email,
             if start_time.tzinfo is not None:
                 start_time = start_time.astimezone(timezone.utc).replace(tzinfo=None) + timedelta(hours=5, minutes=30)
         elif isinstance(start_time, str):
-            start_time = datetime.strptime(start_time, "%Y-%m-%d %H:%M:%S")
+            # Try ISO format (YYYY-MM-DDTHH:MM:SS) first, then fallback to space-separated format
+            try:
+                start_time = datetime.strptime(start_time, "%Y-%m-%dT%H:%M:%S")
+            except ValueError:
+                try:
+                    start_time = datetime.strptime(start_time, "%Y-%m-%d %H:%M:%S")
+                except ValueError as e:
+                    print(f"❌ Invalid datetime format: {start_time}. Expected 'YYYY-MM-DDTHH:MM:SS' or 'YYYY-MM-DD HH:MM:SS'")
+                    return False
         else:
             print(f"❌ Unsupported start_time type: {type(start_time)}")
             return False
