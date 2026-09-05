@@ -1,6 +1,6 @@
 # 🏥 MedApp — Doctor Patient Appointment System
 
-> **Stack:** Streamlit · FastAPI · PostgreSQL · Claude (Anthropic LLM)
+> **Stack:** Streamlit · FastAPI · PostgreSQL
 
 ---
 
