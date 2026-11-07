@@ -24,13 +24,62 @@ from .utils.prompts import get_system_prompt
 from langgraph.checkpoint.postgres import PostgresSaver
 from .tools import execute_sql_query, insert_update_appointment_status, insert_feedback, insert_update_doctor_availability, insert_medical_record, resolve_user_identity, retrieve_medical_records
 logger = logging.getLogger(__name__)
+from langchain_google_genai import ChatGoogleGenerativeAI
+
+
+def _normalize_llm_text(content: Any) -> str:
+    """Convert LangChain / Gemini message content to plain text."""
+    if content is None:
+        return ""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        chunks = []
+        for item in content:
+            if isinstance(item, dict):
+                if 'text' in item and item['text']:
+                    chunks.append(str(item['text']))
+                elif 'content' in item and item['content']:
+                    chunks.append(_normalize_llm_text(item['content']))
+                else:
+                    chunks.append(str(item))
+            elif hasattr(item, 'text') and item.text:
+                chunks.append(str(item.text))
+            else:
+                chunks.append(str(item))
+        return "\n".join(part for part in chunks if part)
+    if isinstance(content, dict):
+        for key in ("text", "content"):
+            if key in content and content[key] is not None:
+                return _normalize_llm_text(content[key])
+        return json.dumps(content, ensure_ascii=False)
+    return str(content)
+
+
+SUPPORTED_GEMINI_MODELS = [
+    "gemini-2.5-flash",
+    "gemini-2.0-flash",
+    "gemini-1.5-flash",
+    "gemini-1.5-pro",
+]
+
+
+def get_gemini_model_name() -> str:
+    requested_model = getattr(settings, "GEMINI_MODEL", None) or "gemini-2.5-flash"
+    if requested_model in SUPPORTED_GEMINI_MODELS:
+        return requested_model
+
+    if requested_model == "gemini-pro":
+        return "gemini-1.5-flash"
+
+    return "gemini-2.5-flash"
 
 
 #Initialize LLM model.
-llm = ChatOpenAI(
-        model="gpt-4o-mini",
+llm = ChatGoogleGenerativeAI(
+        model=get_gemini_model_name(),
         temperature=0,
-        api_key=settings.OPENAI_API_KEY,
+        google_api_key=settings.GEMINI_API_KEY
     )
 
 user_role = ""
@@ -108,9 +157,11 @@ def chat_with_deep_agent(user_message: str, user_email: str = "test_user@test.co
 
         print("Agent Response:", response)
         logger.info("Agent response: %s", response)
+
+        reply = response.get("messages", [])[-1].content if response.get("messages") else ""
         return {
             "success": True,
-            "reply": response["messages"][-1].content,
+            "reply": _normalize_llm_text(reply),
             "used_tool": True,
         }
     

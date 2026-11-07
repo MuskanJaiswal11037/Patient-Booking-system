@@ -3,7 +3,6 @@
 --  Doctor-Patient Appointment System  |  PostgreSQL Schema
 -- ============================================================
 
-CREATE DATABASE medapp;
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 -- ──────────────────────────────────────────────────────────────
@@ -18,11 +17,10 @@ CREATE TABLE IF NOT EXISTS users (
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
-Alter table users add column id VARCHAR(255);
 
-select * from users;
-select * from users;
-alter table users drop COLUMN id;
+INSERT INTO users (email, full_name, role, phone) VALUES
+('muskan@gmail.com', 'Muskan Jaiswal', 'patient', '1234567890'),
+('drjohn@gmail.com', 'Dr. John Doe', 'doctor', '0987654321');
 
 -- DOCTORS
 CREATE TABLE IF NOT EXISTS doctors (
@@ -33,6 +31,9 @@ CREATE TABLE IF NOT EXISTS doctors (
     consultation_fee NUMERIC(10,2) DEFAULT 0,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+INSERT INTO doctors (user_email, specialty, qualification, consultation_fee) VALUES
+('drjohn@gmail.com', 'Cardiologist', 'MD, Fellowship in Cardiology', 100.00);
 
 ------ NURSES
 CREATE TABLE IF NOT EXISTS nurses(
@@ -53,8 +54,9 @@ CREATE TABLE IF NOT EXISTS patients (
     allergies     TEXT,
     created_at    TIMESTAMPTZ DEFAULT NOW()
 );
-
-create table admin_profiles (
+INSERT INTO patients (user_email, date_of_birth, blood_group, allergies) VALUES
+('muskan@gmail.com', '1990-01-01', 'O+', 'Peanut allergy');
+create table IF NOT EXISTS admin_profiles (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     user_email VARCHAR(255) UNIQUE NOT NULL REFERENCES users(email) ON DELETE CASCADE,
     created_at TIMESTAMPTZ DEFAULT NOW()
@@ -70,12 +72,12 @@ CREATE TABLE IF NOT EXISTS doctor_availability (
     start_time TIME NOT NULL,
     end_time   TIME NOT NULL,
     slot_duration_minutes INT DEFAULT 15,
-    slot_duration_minutes INT DEFAULT 15,
     UNIQUE (doctor_id, day_of_week, start_time)
 );
 
+INSERT INTO doctor_availability (doctor_id, day_of_week, start_time, end_time, slot_duration_minutes) VALUES
+((SELECT id FROM doctors WHERE user_email = 'drjohn@gmail.com'), 0, '09:00:00', '17:00:00', 15);
 
-drop table appointments;
 -- ──────────────────────────────────────────────────────────────
 -- 5. APPOINTMENTS
 -- ──────────────────────────────────────────────────────────────
@@ -93,26 +95,10 @@ CREATE TABLE IF NOT EXISTS appointments (
     cancelled_at    TIMESTAMPTZ,
     cancel_reason   TEXT,
     criticality_level INT DEFAULT 1 CHECK (criticality_level BETWEEN 0 AND 1),
-    criticality_level INT DEFAULT 1 CHECK (criticality_level BETWEEN 0 AND 1),
-    created_at      TIMESTAMPTZ DEFAULT NOW(),
+    creat
+    ed_at      TIMESTAMPTZ DEFAULT NOW(),
     updated_at      TIMESTAMPTZ DEFAULT NOW()
 );
-
-
-CREATE OR REPLACE FUNCTION check_start_time_limit()
-RETURNS TRIGGER AS $$
-BEGIN
-    IF (
-        SELECT COUNT(*) 
-        FROM appointments 
-        WHERE start_time = NEW.start_time
-    ) == 2 THEN
-        RETURN NULL;
-    END IF;
-
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
 
 CREATE OR REPLACE FUNCTION validate_appointment_slot()
 RETURNS TRIGGER AS $$
@@ -120,7 +106,6 @@ DECLARE
     v_start_time TIME;
     v_end_time TIME;
     v_day_of_week INT;
-    v_count INT;
     v_count INT;
 BEGIN
     -- Extract day of week from appointment_at
@@ -140,18 +125,10 @@ BEGIN
         
     -- Check if appointment time falls within available hours
     IF NEW.appointment_at::TIME < v_start_time OR NEW.appointment_at::TIME > v_end_time THEN
-    IF NEW.appointment_at::TIME < v_start_time OR NEW.appointment_at::TIME > v_end_time THEN
         RAISE EXCEPTION 'Appointment time % is not within doctor''s available hours (% to %)',
                 NEW.appointment_at::TIME, v_start_time, v_end_time;
     END IF;
 
-    -- IF NEW.appointment_at < NOW() THEN
-    --     RAISE EXCEPTION 'Appointment time cannot be in the past.';
-    -- END IF;
-    -- IF NEW.appointment_at < NOW() THEN
-    --     RAISE EXCEPTION 'Appointment time cannot be in the past.';
-    -- END IF;
-    
     IF NEW.appointment_at::TIME >= TIME '13:00:00'
         AND NEW.appointment_at::TIME < TIME '13:30:00' THEN
         RAISE EXCEPTION 'Appointments are not allowed between 1:00 PM and 1:30 PM (lunch break).';
@@ -165,20 +142,10 @@ BEGIN
     IF v_count >= 2 THEN
         RAISE EXCEPTION 'More than 2 appointments not allowed at same time.';
     END IF;
-    -- ✅ Check max 2 appointments at same time
-    SELECT COUNT(*) INTO v_count
-    FROM appointments
-    WHERE appointment_at = NEW.appointment_at and doctor_id = NEW.doctor_id;
-
-    IF v_count >= 2 THEN
-        RAISE EXCEPTION 'More than 2 appointments not allowed at same time.';
-    END IF;
 
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
-;
-
 
 DROP TRIGGER IF EXISTS appointment_slot_validation ON appointments;
 CREATE TRIGGER appointment_slot_validation
@@ -198,7 +165,7 @@ CREATE TABLE IF NOT EXISTS feedback (
     created_at     TIMESTAMPTZ DEFAULT NOW()
 );
 
-create table calender_events (
+create table IF NOT EXISTS calender_events (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     appointment_id UUID NOT NULL REFERENCES appointments(id) ON DELETE CASCADE,
     event_uid VARCHAR(255) NOT NULL,
@@ -206,9 +173,4 @@ create table calender_events (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- INSERT INTO appointments (id, patient_id, doctor_id, appointment_at, status, reason, created_at, updated_at)
---             VALUES (%s,4e9d7565-a7f7-4764-8f76-61f56088ed19, 2df39159-ee26-4153-adcb-49ac1605e257, %s, %s, %s, NOW(), NOW())
---             id, appointment_at, status;
 
-
-select * from appointments;
